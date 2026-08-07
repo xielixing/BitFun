@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme-type="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-i18n="title">LoopX 控制台</title>
+</head>
+<body>
+  <div id="app" class="lx">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a9 9 0 1 0 9 9"/>
+            <path d="M21 3v6h-6"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <div class="brand__text">
+          <h1 class="brand__title" data-i18n="title">LoopX 控制台</h1>
+          <p class="brand__subtitle" data-i18n="subtitle">宿主心跳 · 自适应轮询 · 单次 Turn</p>
+        </div>
+      </div>
+      <div class="topbar__actions">
+        <button id="btn-project" class="btn" type="button">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
+          <span id="project-label" data-i18n="globalRegistry">全局 Registry</span>
+        </button>
+        <button id="btn-refresh" class="btn btn--icon" type="button" data-i18n-attr="title" data-i18n="refresh">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13 8a5 5 0 1 1-1.5-3.5"/><path d="M13 2v3h-3"/></svg>
+        </button>
+        <button id="btn-settings" class="btn btn--icon" type="button" data-i18n-attr="title" data-i18n="settings">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="banner-nodetect" class="banner banner--warn" hidden>
+      <div class="banner__body">
+        <strong data-i18n="notFoundTitle">未检测到 loopx CLI</strong>
+        <span data-i18n="notFoundHint">请先安装：pip install -e D:\loopx（或保证 loopx / python -m loopx.cli 可用），然后点击重试。</span>
+        <pre id="probe-detail" class="probe-detail" hidden></pre>
+      </div>
+      <button id="btn-retry-detect" class="btn" type="button" data-i18n="retry">重试</button>
+    </div>
+
+    <main class="layout">
+      <section id="metrics" class="metrics" hidden>
+        <article class="metric">
+          <p class="metric__label" data-i18n="mMonitored">监控中</p>
+          <p class="metric__value" id="m-monitored">0</p>
+        </article>
+        <article class="metric">
+          <p class="metric__label" data-i18n="mShouldRun">可运行</p>
+          <p class="metric__value metric__value--ok" id="m-shouldrun">0</p>
+        </article>
+        <article class="metric">
+          <p class="metric__label" data-i18n="mPaused">已暂停</p>
+          <p class="metric__value" id="m-paused">0</p>
+        </article>
+        <article class="metric">
+          <p class="metric__label" data-i18n="mErrors">轮询错误</p>
+          <p class="metric__value" id="m-errors">0</p>
+        </article>
+      </section>
+      <section id="goal-list" class="goal-list">
+        <div id="goals-empty" class="empty" data-i18n="goalsEmpty">尚无目标。选择一个包含 .loopx/registry.json 的项目目录，或在 loopx 中创建目标。</div>
+      </section>
+
+      <section class="log-panel" id="log-panel">
+        <button class="log-panel__header" id="btn-toggle-log" type="button">
+          <svg id="log-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+          <span data-i18n="logTitle">心跳与执行日志</span>
+          <span class="log-panel__count" id="log-count"></span>
+        </button>
+        <div class="log-panel__body" id="log-body"></div>
+      </section>
+    </main>
+
+    <!-- settings dialog -->
+    <dialog id="dlg-settings" class="dlg">
+      <form method="dialog" class="dlg__form">
+        <h2 data-i18n="settings">设置</h2>
+        <label class="field">
+          <span data-i18n="setPrefix">loopx 调用命令（JSON 数组，留空自动探测）</span>
+          <input id="set-prefix" type="text" spellcheck="false" placeholder='["loopx"]' />
+        </label>
+        <label class="field">
+          <span data-i18n="setHost">Run-once host</span>
+          <select id="set-host">
+            <option value="" data-i18n="hostDefault">默认（loopx 自选）</option>
+            <option value="codex-cli">codex-cli</option>
+            <option value="generic-cli">generic-cli</option>
+          </select>
+        </label>
+        <label class="field" id="field-codexbin">
+          <span data-i18n="setCodexBin">codex 可执行文件路径</span>
+          <input id="set-codexbin" type="text" spellcheck="false" placeholder="codex" />
+        </label>
+        <label class="field" id="field-hostjson">
+          <span data-i18n="setHostJson">host-command-json（generic-cli 适配器）</span>
+          <input id="set-hostjson" type="text" spellcheck="false" placeholder='{"command": ...}' />
+        </label>
+        <label class="field">
+          <span data-i18n="setTimeout">Run-once 超时（秒，≤240）</span>
+          <input id="set-timeout" type="number" min="10" max="240" value="120" />
+        </label>
+        <div class="dlg__actions">
+          <button value="cancel" class="btn" data-i18n="cancel">取消</button>
+          <button value="save" id="btn-save-settings" class="btn btn--primary" data-i18n="save">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- run-once confirmation dialog -->
+    <dialog id="dlg-run" class="dlg">
+      <form method="dialog" class="dlg__form">
+        <h2 data-i18n="runConfirmTitle">执行单次 Turn？</h2>
+        <p class="dlg__note" data-i18n="runConfirmNote">将执行以下命令（experimental）：</p>
+        <pre id="run-argv" class="run-argv"></pre>
+        <div class="dlg__actions">
+          <button value="cancel" class="btn" data-i18n="cancel">取消</button>
+          <button value="run" id="btn-confirm-run" class="btn btn--primary" data-i18n="runConfirm">执行</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- raw JSON inspector dialog -->
+    <dialog id="dlg-raw" class="dlg dlg--wide">
+      <form method="dialog" class="dlg__form">
+        <h2 id="raw-title">JSON</h2>
+        <pre id="raw-body" class="run-argv raw-body"></pre>
+        <div class="dlg__actions">
+          <button type="button" id="btn-copy-raw" class="btn" data-i18n="copy">复制</button>
+          <button value="close" class="btn btn--primary" data-i18n="close">关闭</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+</body>
+</html>
