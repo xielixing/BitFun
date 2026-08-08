@@ -297,6 +297,8 @@ app.onLocaleChange((locale) => {
 });
 ```
 
+MiniApp 加载完成后会立即收到一次当前激活状态（Tab 在前台收到 `activate`，在后台收到 `deactivate`），之后每次 Tab 切入/切走时触发对应钩子。适合用来暂停/恢复轮询、动画等后台不需要的工作。
+
 ## 国际化 i18n
 
 ### `app.t(table, fallback)` — 多语言字符串挑选

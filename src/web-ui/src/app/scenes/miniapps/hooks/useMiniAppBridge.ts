@@ -4,7 +4,9 @@
  * ai.* → Host AI client, agent.* → Host agent bridge (hidden subagent runs),
  * deck.renderPage → hidden host WebView slide rasterization (export),
  * clipboard.* → Host navigator.clipboard.
- * Also handles bitfun/request-theme and pushes theme changes to the iframe.
+ * Also handles bitfun/request-theme and pushes theme changes to the iframe,
+ * and pushes activate/deactivate lifecycle events as the hosting scene tab
+ * gains/loses activation (consumed via app.onActivate/app.onDeactivate).
  */
 import { useLayoutEffect, useRef, useEffect, RefObject } from 'react';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
@@ -37,6 +39,7 @@ export function useMiniAppBridge(
   iframeRef: RefObject<HTMLIFrameElement>,
   app: MiniApp,
   runScope: MiniAppRunScope,
+  isActive: boolean = true,
 ) {
   const { workspacePath } = useCurrentWorkspace();
   const { theme: currentTheme } = useTheme();
@@ -47,6 +50,12 @@ export function useMiniAppBridge(
   workspacePathRef.current = workspacePath;
   const localeRef = useRef(currentLanguage);
   localeRef.current = currentLanguage;
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
+  // The compiled bridge script announces readiness by sending bitfun/request-theme
+  // after registering its message listener; activation pushes before that point
+  // would be dropped by the still-loading iframe.
+  const bridgeReadyRef = useRef(false);
 
   const runScopeRef = useRef<MiniAppRunScope>(runScope);
   runScopeRef.current = runScope;
@@ -94,6 +103,11 @@ export function useMiniAppBridge(
             '*',
           );
         }
+        bridgeReadyRef.current = true;
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'bitfun:event', event: isActiveRef.current ? 'activate' : 'deactivate' },
+          '*',
+        );
         return;
       }
 
@@ -393,6 +407,17 @@ export function useMiniAppBridge(
       '*',
     );
   }, [currentLanguage, iframeRef]);
+
+  // Push activation transitions (scene tab shown/hidden) to the iframe.
+  // Before the bridge handshake the initial state is delivered by the
+  // bitfun/request-theme handler above, so pre-handshake pushes are skipped.
+  useEffect(() => {
+    if (!bridgeReadyRef.current || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      { type: 'bitfun:event', event: isActive ? 'activate' : 'deactivate' },
+      '*',
+    );
+  }, [isActive, iframeRef]);
 
   // Listen for AI stream events from Tauri and forward them to the iframe.
   useEffect(() => {

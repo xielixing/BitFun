@@ -140,7 +140,7 @@ function renderScene(
       return <PanelViewScene workspacePath={workspacePath} />;
     default:
       if (typeof id === 'string' && id.startsWith('miniapp:')) {
-        return <MiniAppScene appId={id.slice('miniapp:'.length)} />;
+        return <MiniAppScene appId={id.slice('miniapp:'.length)} isActive={isActive} />;
       }
       return null;
   }

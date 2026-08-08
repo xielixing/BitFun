@@ -33,9 +33,10 @@ const MINIAPP_REFRESH_EVENTS = [
 
 interface MiniAppSceneProps {
   appId: string;
+  isActive?: boolean;
 }
 
-const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
+const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId, isActive = true }) => {
   const openApp = useMiniAppStore((state) => state.openApp);
   const closeApp = useMiniAppStore((state) => state.closeApp);
   const markCustomizationActive = useMiniAppStore((state) => state.markCustomizationActive);
@@ -206,7 +207,7 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
                 <Loader2 size={20} className="miniapp-scene__spinning" strokeWidth={1.5} />
               </div>
             )}
-            <MiniAppRunner key={`${app.id}-${key}`} app={app} />
+            <MiniAppRunner key={`${app.id}-${key}`} app={app} isActive={isActive} />
             {customizePreview && (
               <div className="miniapp-scene__preview-stage" role="region" aria-label={t('customize.previewTitle')}>
                 <div className="miniapp-scene__preview-stage-header">
