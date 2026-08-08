@@ -30,7 +30,7 @@
       </div>
       <div class="topbar__actions">
         <button id="btn-issue" class="btn btn--primary" type="button" data-i18n="issueAdd">＋ Issue</button>
-        <button id="btn-project" class="btn" type="button">
+        <button id="btn-project" class="btn" type="button" data-i18n-title="projectBtnHint">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
           <span id="project-label" data-i18n="globalRegistry">全局 Registry</span>
         </button>
@@ -54,7 +54,17 @@
 
     <main class="layout">
       <section id="goal-list" class="board">
-        <div id="goals-empty" class="empty" data-i18n="goalsEmpty">尚无目标。选择一个包含 .loopx/registry.json 的项目目录，或在 loopx 中创建目标。</div>
+        <div id="goals-empty" class="empty">
+          <div class="onboard">
+            <div class="onboard__title" data-i18n="onboardTitle">开始使用</div>
+            <ol class="onboard__steps">
+              <li data-i18n="onboardStep1">安装 loopx：对源码 checkout 执行 pip install -e（左上角出现红色横幅说明还没检测到）</li>
+              <li data-i18n="onboardStep2">选择数据源：默认读"全局 Registry"——loopx 用 sync-global 把所有项目的 goals 汇总到 ~/.codex/loopx/registry.global.json；点上方文件夹按钮可改为读某个项目的 .loopx/registry.json</li>
+              <li data-i18n="onboardStep3">有 goal 后这里变成看板：等你处理（gate）/ 可运行 / 监控中，心跳会按 loopx 的调度提示自动轮询</li>
+              <li data-i18n="onboardStep4">或者直接点 ＋ Issue，粘贴一个 GitHub issue 链接，从一个 issue 开始自动修复</li>
+            </ol>
+          </div>
+        </div>
       </section>
 
       <section class="log-panel" id="log-panel">

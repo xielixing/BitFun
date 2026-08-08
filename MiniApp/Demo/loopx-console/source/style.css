@@ -154,6 +154,18 @@ body {
 
 .empty { color: var(--lx-text-mute); text-align: center; padding: 40px 20px; font-size: 12px; width: 100%; }
 
+/* first-run onboarding card inside the empty state */
+.onboard {
+  margin: 0 auto; max-width: 560px; text-align: left;
+  border: 1px solid var(--lx-border); border-radius: var(--lx-radius);
+  background: var(--lx-surface); padding: 16px 20px;
+}
+.onboard__title { font-size: 14px; font-weight: 600; color: var(--lx-text); margin-bottom: 8px; }
+.onboard__steps {
+  margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px;
+  font-size: 12.5px; line-height: 1.55; color: var(--lx-text-soft);
+}
+
 /* ── goal card ──────────────────────────────────────────── */
 .goal {
   border: 1px solid var(--lx-border); border-radius: var(--lx-radius);
