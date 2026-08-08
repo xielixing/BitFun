@@ -11,11 +11,13 @@ import type { MiniAppRunScope } from '../customization/miniAppCustomizationTypes
 interface MiniAppRunnerProps {
   app: MiniApp;
   runScope?: MiniAppRunScope;
+  /** Whether the hosting scene tab is active; drives activate/deactivate lifecycle events. */
+  isActive?: boolean;
 }
 
-const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope }) => {
+const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, isActive = true }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  useMiniAppBridge(iframeRef, app, runScope ?? { kind: 'active', appId: app.id });
+  useMiniAppBridge(iframeRef, app, runScope ?? { kind: 'active', appId: app.id }, isActive);
 
   const writeCompiledHtml = useCallback(() => {
     const iframe = iframeRef.current;
