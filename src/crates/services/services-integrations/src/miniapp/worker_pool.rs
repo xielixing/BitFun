@@ -75,7 +75,13 @@ pub type MiniAppWorkerPoolResult<T> = Result<T, MiniAppWorkerPoolError>;
 
 struct WorkerEntry {
     revision: String,
-    worker: Arc<Mutex<JsWorker>>,
+    worker: Arc<JsWorker>,
+}
+
+/// A worker is reclaimable only when nothing is in flight: `last_activity`
+/// goes stale during long RPCs that emit no stderr output.
+fn worker_is_reclaimable(now: i64, worker: &JsWorker) -> bool {
+    !worker.is_busy() && worker_is_idle(now, worker.last_activity_ms())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,13 +133,7 @@ fn spawn_worker_reaper() -> Arc<Mutex<HashMap<String, WorkerEntry>>> {
 fn drain_idle_workers(guard: &mut HashMap<String, WorkerEntry>, now: i64) -> Vec<WorkerEntry> {
     let to_remove = guard
         .iter()
-        .filter(|(_, entry)| {
-            entry
-                .worker
-                .try_lock()
-                .map(|worker| worker_is_idle(now, worker.last_activity_ms()))
-                .unwrap_or(false)
-        })
+        .filter(|(_, entry)| worker_is_reclaimable(now, &entry.worker))
         .map(|(key, _)| key.clone())
         .collect::<Vec<_>>();
 
@@ -144,12 +144,9 @@ fn drain_idle_workers(guard: &mut HashMap<String, WorkerEntry>, now: i64) -> Vec
 }
 
 fn drain_lru_worker(guard: &mut HashMap<String, WorkerEntry>) -> Option<WorkerEntry> {
+    // Workers with in-flight RPCs are not eviction candidates.
     let oldest_id = select_lru_worker(guard.iter().filter_map(|(id, entry)| {
-        entry
-            .worker
-            .try_lock()
-            .map(|worker| (id.as_str(), worker.last_activity_ms()))
-            .ok()
+        (!entry.worker.is_busy()).then(|| (id.as_str(), entry.worker.last_activity_ms()))
     }))
     .unwrap_or_default();
 
@@ -162,8 +159,7 @@ fn drain_lru_worker(guard: &mut HashMap<String, WorkerEntry>) -> Option<WorkerEn
 
 async fn kill_worker_entries(entries: Vec<WorkerEntry>) {
     for entry in entries {
-        let mut worker = entry.worker.lock().await;
-        worker.kill().await;
+        entry.worker.kill().await;
     }
 }
 
@@ -228,7 +224,7 @@ impl JsWorkerPool {
         worker_revision: &str,
         policy_json: &str,
         node_perms: Option<&NodePermissions>,
-    ) -> MiniAppWorkerPoolResult<Arc<Mutex<JsWorker>>> {
+    ) -> MiniAppWorkerPoolResult<Arc<JsWorker>> {
         let app_dir = self.miniapp_dir(app_id);
         self.get_or_spawn_with_app_dir(
             app_id,
@@ -249,7 +245,7 @@ impl JsWorkerPool {
         worker_revision: &str,
         policy_json: &str,
         node_perms: Option<&NodePermissions>,
-    ) -> MiniAppWorkerPoolResult<Arc<Mutex<JsWorker>>> {
+    ) -> MiniAppWorkerPoolResult<Arc<JsWorker>> {
         let _spawn_guard = self.spawn_lock.lock().await;
         let mut workers_to_kill = Vec::new();
 
@@ -260,11 +256,7 @@ impl JsWorkerPool {
                 .unwrap_or_default()
                 .as_millis() as i64;
             if let Some(entry) = guard.remove(worker_key) {
-                let is_idle = entry
-                    .worker
-                    .try_lock()
-                    .map(|worker| worker_is_idle(now, worker.last_activity_ms()))
-                    .unwrap_or(false);
+                let is_idle = worker_is_reclaimable(now, &entry.worker);
                 match plan_existing_worker_admission(&entry.revision, worker_revision, is_idle) {
                     ExistingWorkerAdmission::Reuse => {
                         let worker = Arc::clone(&entry.worker);
@@ -317,7 +309,7 @@ impl JsWorkerPool {
         .map_err(MiniAppWorkerPoolError::validation)?;
 
         let _timeout_ms = node_perms.and_then(|n| n.timeout_ms).unwrap_or(30_000);
-        let worker = Arc::new(Mutex::new(worker));
+        let worker = Arc::new(worker);
         {
             let mut guard = self.workers.lock().await;
             guard.insert(
@@ -345,8 +337,9 @@ impl JsWorkerPool {
             .get_or_spawn(app_id, worker_revision, policy_json, permissions)
             .await?;
         let timeout_ms = permissions.and_then(|n| n.timeout_ms).unwrap_or(30_000);
-        let guard = worker.lock().await;
-        guard
+        // No pool-level lock here: JsWorker::call serializes only the stdin
+        // write, so concurrent RPCs to the same app interleave.
+        worker
             .call(method, params, timeout_ms)
             .await
             .map_err(MiniAppWorkerPoolError::validation)
@@ -374,8 +367,7 @@ impl JsWorkerPool {
             )
             .await?;
         let timeout_ms = permissions.and_then(|n| n.timeout_ms).unwrap_or(30_000);
-        let guard = worker.lock().await;
-        guard
+        worker
             .call(method, params, timeout_ms)
             .await
             .map_err(MiniAppWorkerPoolError::validation)
