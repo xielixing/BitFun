@@ -21,7 +21,15 @@
           <p class="brand__subtitle" data-i18n="subtitle">宿主心跳 · 自适应轮询 · 单次 Turn</p>
         </div>
       </div>
+      <div class="topbar__status">
+        <span id="hb-presence" class="presence presence--idle">
+          <span class="presence__dot"></span>
+          <span id="hb-presence-text"></span>
+        </span>
+        <span id="hb-next" class="hb-next"></span>
+      </div>
       <div class="topbar__actions">
+        <button id="btn-issue" class="btn btn--primary" type="button" data-i18n="issueAdd">＋ Issue</button>
         <button id="btn-project" class="btn" type="button">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4a1 1 0 011-1h3l1.5 2H13a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/></svg>
           <span id="project-label" data-i18n="globalRegistry">全局 Registry</span>
@@ -38,32 +46,14 @@
     <div id="banner-nodetect" class="banner banner--warn" hidden>
       <div class="banner__body">
         <strong data-i18n="notFoundTitle">未检测到 loopx CLI</strong>
-        <span data-i18n="notFoundHint">请先安装：pip install -e D:\loopx（或保证 loopx / python -m loopx.cli 可用），然后点击重试。</span>
+        <span data-i18n="notFoundHint">请先安装 loopx（对源码 checkout 执行 pip install -e），或在设置中指定调用命令 / 源码目录，然后点击重试。</span>
         <pre id="probe-detail" class="probe-detail" hidden></pre>
       </div>
       <button id="btn-retry-detect" class="btn" type="button" data-i18n="retry">重试</button>
     </div>
 
     <main class="layout">
-      <section id="metrics" class="metrics" hidden>
-        <article class="metric">
-          <p class="metric__label" data-i18n="mMonitored">监控中</p>
-          <p class="metric__value" id="m-monitored">0</p>
-        </article>
-        <article class="metric">
-          <p class="metric__label" data-i18n="mShouldRun">可运行</p>
-          <p class="metric__value metric__value--ok" id="m-shouldrun">0</p>
-        </article>
-        <article class="metric">
-          <p class="metric__label" data-i18n="mPaused">已暂停</p>
-          <p class="metric__value" id="m-paused">0</p>
-        </article>
-        <article class="metric">
-          <p class="metric__label" data-i18n="mErrors">轮询错误</p>
-          <p class="metric__value" id="m-errors">0</p>
-        </article>
-      </section>
-      <section id="goal-list" class="goal-list">
+      <section id="goal-list" class="board">
         <div id="goals-empty" class="empty" data-i18n="goalsEmpty">尚无目标。选择一个包含 .loopx/registry.json 的项目目录，或在 loopx 中创建目标。</div>
       </section>
 
@@ -86,9 +76,12 @@
           <input id="set-prefix" type="text" spellcheck="false" placeholder='["loopx"]' />
         </label>
         <label class="field">
+          <span data-i18n="setSrcDir">loopx 源码目录（可选，探测失败时作为 PYTHONPATH 兜底）</span>
+          <input id="set-srcdir" type="text" spellcheck="false" placeholder="C:\path\to\loopx" />
+        </label>
+        <label class="field">
           <span data-i18n="setHost">Run-once host</span>
           <select id="set-host">
-            <option value="" data-i18n="hostDefault">默认（loopx 自选）</option>
             <option value="codex-cli">codex-cli</option>
             <option value="generic-cli">generic-cli</option>
           </select>
@@ -98,8 +91,8 @@
           <input id="set-codexbin" type="text" spellcheck="false" placeholder="codex" />
         </label>
         <label class="field" id="field-hostjson">
-          <span data-i18n="setHostJson">host-command-json（generic-cli 适配器）</span>
-          <input id="set-hostjson" type="text" spellcheck="false" placeholder='{"command": ...}' />
+          <span data-i18n="setHostJson">host-command-json（generic-cli 适配器 argv）</span>
+          <input id="set-hostjson" type="text" spellcheck="false" placeholder='["python","adapter.py"]' />
         </label>
         <label class="field">
           <span data-i18n="setTimeout">Run-once 超时（秒，≤240）</span>
@@ -125,11 +118,35 @@
       </form>
     </dialog>
 
+    <!-- issue intake dialog -->
+    <dialog id="dlg-issue" class="dlg dlg--wide">
+      <form method="dialog" class="dlg__form">
+        <h2 data-i18n="issueTitle">从 GitHub Issue 开始修复</h2>
+        <label class="field">
+          <span data-i18n="issueUrl">Issue / PR 链接</span>
+          <div class="field__row">
+            <input id="issue-url" type="text" spellcheck="false" placeholder="https://github.com/owner/repo/issues/123" />
+            <button type="button" id="btn-issue-parse" class="btn" data-i18n="issueParse">解析</button>
+          </div>
+        </label>
+        <div id="issue-preview" class="issue-preview" hidden></div>
+        <label class="field">
+          <span data-i18n="issueGoal">写入到 goal</span>
+          <select id="issue-goal"></select>
+        </label>
+        <p id="issue-nogoals" class="dlg__note dlg__note--warn" data-i18n="issueNoGoals" hidden>当前注册表没有 goal——先选择项目目录，或在 loopx 中创建 goal</p>
+        <div class="dlg__actions">
+          <button value="cancel" class="btn" data-i18n="cancel">取消</button>
+          <button type="button" id="btn-issue-write" class="btn btn--primary" disabled></button>
+        </div>
+      </form>
+    </dialog>
+
     <!-- raw JSON inspector dialog -->
     <dialog id="dlg-raw" class="dlg dlg--wide">
       <form method="dialog" class="dlg__form">
         <h2 id="raw-title">JSON</h2>
-        <pre id="raw-body" class="run-argv raw-body"></pre>
+        <pre id="raw-body" class="run-argv raw-body" tabindex="0"></pre>
         <div class="dlg__actions">
           <button type="button" id="btn-copy-raw" class="btn" data-i18n="copy">复制</button>
           <button value="close" class="btn btn--primary" data-i18n="close">关闭</button>

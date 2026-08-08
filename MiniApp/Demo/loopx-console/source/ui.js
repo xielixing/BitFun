@@ -2,6 +2,8 @@
 // The heartbeat is a single setTimeout chain armed to the earliest per-goal
 // due time; each poll's interval is dictated by loopx's scheduler_hint
 // (recommended interval, unchanged-poll backoff, max clamp, reset_token).
+// Rendering is fingerprint-throttled: unchanged decisions repaint nothing but
+// the 1s countdown, and re-renders are deferred while a card input has focus.
 
 const app = window.app;
 
@@ -14,7 +16,7 @@ const I18N = {
     settings: '设置',
     retry: '重试',
     notFoundTitle: '未检测到 loopx CLI',
-    notFoundHint: '请先安装：pip install -e D:\\loopx（或保证 loopx / python -m loopx.cli 可用），然后点击重试。',
+    notFoundHint: '请先安装 loopx（对源码 checkout 执行 pip install -e），或在设置中指定调用命令 / 源码目录，然后点击重试。',
     goalsEmpty: '尚无目标。选择一个包含 .loopx/registry.json 的项目目录，或在 loopx 中创建目标。',
     logTitle: '心跳与执行日志',
     monitor: '监控',
@@ -22,36 +24,64 @@ const I18N = {
     agentFree: '手动输入 agent id…',
     plan: 'Plan',
     runOnce: '执行一次',
+    cancelRun: '取消运行',
+    running: (t) => `运行中 ${t}`,
+    lastRun: (code, s) => `上次运行 exit=${code} · ${s}s`,
+    lastRunCancelled: '上次运行已取消',
     resume: '已暂停 · 点击恢复',
-    nextPoll: (t, iv) => `下次轮询 ${t} · 间隔 ${iv} 分钟`,
+    nextPoll: (t) => `下次轮询 ${t}`,
+    intervalMath: (iv, base, mult, n, cap) => `间隔 ${iv}m（基准 ${base}m ×${mult}^${n}，上限 ${cap}m）`,
+    intervalPlain: (iv) => `间隔 ${iv}m`,
     unchangedTimes: (n) => `未变化 ×${n}`,
-    pollError: (n) => `轮询失败 ×${n}`,
-    stateUnknown: '未知',
+    retryIn: (n, t) => `↻ 轮询失败 ×${n} · ${t} 后重试`,
+    waitingOn: (w) => `等待：${w}`,
     runConfirmTitle: '执行单次 Turn？',
     runConfirmNote: '将执行以下命令（experimental）：',
     runConfirm: '执行',
     cancel: '取消',
     save: '保存',
     setPrefix: 'loopx 调用命令（JSON 数组，留空自动探测）',
+    setSrcDir: 'loopx 源码目录（可选，探测失败时作为 PYTHONPATH 兜底）',
     setHost: 'Run-once host',
-    hostDefault: '默认（loopx 自选）',
     setCodexBin: 'codex 可执行文件路径',
-    setHostJson: 'host-command-json（generic-cli 适配器）',
+    setHostJson: 'host-command-json（generic-cli 适配器 argv）',
     setTimeout: 'Run-once 超时（秒，≤240）',
     needProject: '执行 run-once 需要先选择项目目录',
     needAgent: '该目标没有已注册的 agent，请先填写 agent id',
+    needHostJson: 'generic-cli host 需要在设置中填写 host-command-json（适配器 argv），或改用 codex-cli',
     detected: (v) => `已检测到 loopx：${v}`,
-    mMonitored: '监控中',
-    mShouldRun: '可运行',
-    mPaused: '已暂停',
-    mErrors: '轮询错误',
     copy: '复制',
     close: '关闭',
     raw: 'JSON',
+    groupGated: '等你处理',
     groupRun: '可运行',
-    groupWait: '等待中',
-    groupPaused: '已暂停',
+    groupWait: '监控中',
+    groupPaused: '已停表',
     groupError: '异常',
+    groupGatedHint: '这些目标由你或 controller 解锁后才能继续',
+    groupRunHint: 'loopx 判定现在可以执行一次 turn',
+    groupWaitHint: '按 loopx 推荐间隔静默轮询中',
+    groupPausedHint: '达到未变化上限已停表，点击恢复重新开始',
+    groupErrorHint: '轮询失败，按错误退避自动重试',
+    colEmpty: '暂无',
+    issueAdd: '＋ Issue',
+    issueTitle: '从 GitHub Issue 开始修复',
+    issueUrl: 'Issue / PR 链接',
+    issueGoal: '写入到 goal',
+    issueParse: '解析',
+    issueParsing: '解析中…',
+    issueWrite: (n) => `写入 ${n} 个 todos`,
+    issueNoGoals: '当前注册表没有 goal——先选择项目目录，或在 loopx 中创建 goal',
+    issueBranchLabel: '分支计划',
+    issueTodosLabel: '将写入的 todos',
+    issueWritten: (okN, n) => `已写入 ${okN}/${n} 个 todos`,
+    presenceLive: '心跳运行中',
+    presencePaused: '心跳已暂停',
+    presenceIdle: '心跳未启动',
+    presenceNoCli: 'loopx 不可用',
+    hbNext: (t) => `下次心跳 ${t}`,
+    hbChecking: '正在检查…',
+    runCancelled: '运行已取消',
   },
   'en-US': {
     title: 'LoopX Console',
@@ -61,7 +91,7 @@ const I18N = {
     settings: 'Settings',
     retry: 'Retry',
     notFoundTitle: 'loopx CLI not found',
-    notFoundHint: 'Install it first: pip install -e D:\\loopx (or make loopx / python -m loopx.cli available), then retry.',
+    notFoundHint: 'Install loopx first (pip install -e on a source checkout), or set the invocation command / source directory in Settings, then retry.',
     goalsEmpty: 'No goals yet. Pick a project directory containing .loopx/registry.json, or create goals in loopx.',
     logTitle: 'Heartbeat & execution log',
     monitor: 'Monitor',
@@ -69,36 +99,64 @@ const I18N = {
     agentFree: 'Type agent id…',
     plan: 'Plan',
     runOnce: 'Run once',
+    cancelRun: 'Cancel run',
+    running: (t) => `running ${t}`,
+    lastRun: (code, s) => `last run exit=${code} · ${s}s`,
+    lastRunCancelled: 'last run cancelled',
     resume: 'Paused · click to resume',
-    nextPoll: (t, iv) => `next poll in ${t} · every ${iv} min`,
+    nextPoll: (t) => `next poll in ${t}`,
+    intervalMath: (iv, base, mult, n, cap) => `every ${iv}m (base ${base}m ×${mult}^${n}, cap ${cap}m)`,
+    intervalPlain: (iv) => `every ${iv}m`,
     unchangedTimes: (n) => `unchanged ×${n}`,
-    pollError: (n) => `poll failed ×${n}`,
-    stateUnknown: 'unknown',
+    retryIn: (n, t) => `↻ poll failed ×${n} · retry in ${t}`,
+    waitingOn: (w) => `waiting on: ${w}`,
     runConfirmTitle: 'Run one turn?',
     runConfirmNote: 'The following command will run (experimental):',
     runConfirm: 'Run',
     cancel: 'Cancel',
     save: 'Save',
     setPrefix: 'loopx invocation (JSON array, empty = auto-detect)',
+    setSrcDir: 'loopx source checkout (optional PYTHONPATH fallback)',
     setHost: 'Run-once host',
-    hostDefault: 'Default (loopx decides)',
     setCodexBin: 'codex binary path',
-    setHostJson: 'host-command-json (generic-cli adapter)',
+    setHostJson: 'host-command-json (generic-cli adapter argv)',
     setTimeout: 'Run-once timeout (seconds, ≤240)',
     needProject: 'Run-once requires a project directory',
     needAgent: 'This goal has no registered agent — type an agent id first',
+    needHostJson: 'The generic-cli host needs host-command-json (adapter argv) in Settings — or switch to codex-cli',
     detected: (v) => `loopx detected: ${v}`,
-    mMonitored: 'Monitored',
-    mShouldRun: 'Should run',
-    mPaused: 'Paused',
-    mErrors: 'Poll errors',
     copy: 'Copy',
     close: 'Close',
     raw: 'JSON',
+    groupGated: 'Awaiting you',
     groupRun: 'Should run',
-    groupWait: 'Waiting',
-    groupPaused: 'Paused',
+    groupWait: 'Monitoring',
+    groupPaused: 'Stopped',
     groupError: 'Errors',
+    groupGatedHint: 'Blocked until you or the controller unlock them',
+    groupRunHint: 'loopx says a turn can run now',
+    groupWaitHint: 'Quietly polling at the loopx-recommended interval',
+    groupPausedHint: 'Stopped by the unchanged-poll limit — click resume to re-arm',
+    groupErrorHint: 'Polling failed — retrying automatically with backoff',
+    colEmpty: 'Nothing here',
+    issueAdd: '+ Issue',
+    issueTitle: 'Start a fix from a GitHub issue',
+    issueUrl: 'Issue / PR URL',
+    issueGoal: 'Write into goal',
+    issueParse: 'Parse',
+    issueParsing: 'Parsing…',
+    issueWrite: (n) => `Write ${n} todos`,
+    issueNoGoals: 'No goals in the current registry — pick a project directory, or create a goal in loopx first',
+    issueBranchLabel: 'Branch plan',
+    issueTodosLabel: 'Todos to write',
+    issueWritten: (okN, n) => `wrote ${okN}/${n} todos`,
+    presenceLive: 'Heartbeat live',
+    presencePaused: 'Heartbeat paused',
+    presenceIdle: 'Heartbeat idle',
+    presenceNoCli: 'loopx unavailable',
+    hbNext: (t) => `next tick in ${t}`,
+    hbChecking: 'checking now…',
+    runCancelled: 'run cancelled',
   },
 };
 
@@ -114,12 +172,16 @@ const DEFAULT_INTERVAL_MIN = 1;
 const ERROR_BACKOFF_CAP_MIN = 30;
 
 const S = {
-  config: { projectDir: null, argvPrefix: null, agentByGoal: {}, monitorByGoal: {}, host: '', codexBin: '', hostCommandJson: '', timeoutSeconds: 120 },
+  config: {
+    projectDir: null, argvPrefix: null, srcDir: '', agentByGoal: {}, monitorByGoal: {},
+    host: 'codex-cli', codexBin: '', hostCommandJson: '', timeoutSeconds: 120,
+  },
   detect: null,
   goals: new Map(), // goalId -> G
   timer: null,
   countdownTimer: null,
   paused: false,
+  renderPending: false,
   logs: [],
 };
 
@@ -129,17 +191,23 @@ function newGoalState(goalId, info) {
     agents: info.agents || [],
     agentId: S.config.agentByGoal[goalId] || (info.agents && info.agents[0]) || '',
     state: info.state || null,
+    waitingOn: info.waitingOn ?? null,
     monitoring: S.config.monitorByGoal[goalId] !== false,
     intervalMin: DEFAULT_INTERVAL_MIN,
     nextDueAt: 0,
     unchangedCount: 0,
     errorCount: 0,
+    lastError: null,
     lastResetToken: null,
     lastDecisionKey: null,
+    hint: null,          // { base, mult, cap } for the interval-math line
     stopped: false,
     polling: false,
+    repollQueued: false,
     running: false,
-    last: null, // normalized shouldRun result
+    runStartedAt: 0,
+    lastRun: null,       // { exitCode, durationMs, status, ok, cancelled }
+    last: null,          // normalized shouldRun result
   };
 }
 
@@ -160,6 +228,8 @@ function log(msg, isErr = false) {
   while (body.children.length > 500) body.removeChild(body.firstChild);
   body.scrollTop = body.scrollHeight;
   document.getElementById('log-count').textContent = String(S.logs.length);
+  // Errors must be visible even though the panel boots collapsed.
+  if (isErr) document.getElementById('log-panel').classList.remove('collapsed');
 }
 
 // ── config persistence ────────────────────────────────────
@@ -168,6 +238,11 @@ async function loadConfig() {
     const stored = await app.storage.get('config');
     if (stored && typeof stored === 'object') Object.assign(S.config, stored);
   } catch (_) {}
+  // Older configs stored '' for a "loopx decides" host that upstream does not
+  // have (run-once defaults to generic-cli and then hard-requires an adapter).
+  if (S.config.host !== 'codex-cli' && S.config.host !== 'generic-cli') {
+    S.config.host = 'codex-cli';
+  }
 }
 async function saveConfig() {
   try { await app.storage.set('config', S.config); } catch (_) {}
@@ -195,8 +270,25 @@ function onTimerFire() {
   rearmTimer();
 }
 
+function valueAtPath(obj, path) {
+  return path.split('.').reduce((c, p) => (c && typeof c === 'object' ? c[p] : undefined), obj);
+}
+
+// Prefer the contract's unchanged_identity_keys over home-grown fields:
+// free-text `reason` embeds live quota fractions and would defeat backoff.
 function decisionKey(res) {
-  return [res.shouldRun, res.state, res.effectiveAction, res.reason].map(String).join('|');
+  const keys = res.scheduler?.unchangedIdentityKeys;
+  if (keys && keys.length && res.raw) {
+    return keys.map((k) => String(valueAtPath(res.raw, k))).join('|');
+  }
+  return [res.shouldRun, res.state, res.effectiveAction].map(String).join('|');
+}
+
+function applyPollError(g, message) {
+  g.errorCount += 1;
+  g.lastError = message;
+  g.intervalMin = Math.min(Math.pow(2, g.errorCount), ERROR_BACKOFF_CAP_MIN);
+  log(`[${g.goalId}] poll failed ×${g.errorCount}: ${message}`, true);
 }
 
 async function pollGoal(g) {
@@ -210,12 +302,22 @@ async function pollGoal(g) {
       goalId: g.goalId,
       agentId: g.agentId || undefined,
     });
-    g.last = res;
+    if (res.raw) g.last = res; // keep partial payloads visible (reason, state)
+    if (res.ok === false || res.error) {
+      // CLI-level failure (bad exit / no JSON) is an error, not a decision.
+      applyPollError(g, res.error || res.reason || 'loopx exited non-zero');
+      return;
+    }
     g.errorCount = 0;
+    g.lastError = null;
+    // shouldRun is authoritative for the gate: a cleared waiting_on (null)
+    // must un-gate the goal rather than stick to the stale listGoals value.
+    g.waitingOn = res.waitingOn ?? null;
     const sched = res.scheduler || {};
     const recommended = Number(sched.recommendedIntervalMinutes) || DEFAULT_INTERVAL_MIN;
     const maxIv = Number(sched.maxIntervalMinutes) || Math.max(recommended, 60);
     const backoff = Number(sched.backoffMultiplier) || 2;
+    g.hint = { base: recommended, mult: backoff, cap: maxIv };
     const token = sched.resetToken || null;
     const key = decisionKey(res);
 
@@ -244,63 +346,75 @@ async function pollGoal(g) {
     g.lastDecisionKey = key;
     g.intervalMin = Math.min(Math.max(g.intervalMin, recommended), maxIv);
   } catch (err) {
-    g.errorCount += 1;
-    g.intervalMin = Math.min(Math.pow(2, g.errorCount), ERROR_BACKOFF_CAP_MIN);
-    log(`[${g.goalId}] poll error: ${err.message || err}`, true);
+    applyPollError(g, String(err.message || err));
   } finally {
     g.nextDueAt = Date.now() + g.intervalMin * 60000;
     g.polling = false;
     renderGoal(g);
     rearmTimer();
+    if (g.repollQueued) {
+      g.repollQueued = false;
+      pollNow(g);
+    }
   }
 }
 
 function pollNow(g) {
+  if (g.polling) {
+    // A poll is in flight; queue exactly one follow-up instead of silently
+    // dropping the request (matters after run-once completes).
+    g.repollQueued = true;
+    return;
+  }
   g.nextDueAt = 0;
   g.stopped = false;
+  if (S.paused) return; // due immediately once the heartbeat resumes
   pollGoal(g).then(rearmTimer);
 }
 
-// ── rendering ─────────────────────────────────────────────
-function routeBadgeClass(res) {
-  if (!res) return 'badge--wait';
-  if (res.ok === false || res.error) return 'badge--error';
-  if (res.shouldRun === true) return 'badge--run';
-  const s = String(res.state || res.effectiveAction || '').toUpperCase();
-  if (/BLOCK|REPAIR|USER_ACTION|ERROR/.test(s)) return 'badge--warn';
-  return 'badge--wait';
+// ── pause / resume (lifecycle + visibility) ───────────────
+function pauseHeartbeat() {
+  if (S.paused) return;
+  S.paused = true;
+  if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+  updateHeaderStatus();
 }
 
-// Symphony-style grouping: goals bucketed by status, most actionable first.
-const GROUP_ORDER = ['run', 'error', 'paused', 'wait'];
+function resumeHeartbeat() {
+  if (!S.paused) return;
+  S.paused = false;
+  const now = Date.now();
+  for (const g of S.goals.values()) {
+    if (g.monitoring && !g.stopped && g.nextDueAt <= now) pollGoal(g);
+  }
+  rearmTimer();
+  updateHeaderStatus();
+}
+
+// ── rendering ─────────────────────────────────────────────
+function isGated(g) {
+  // After a successful poll, its waiting_on is authoritative (may be null);
+  // before one, fall back to the listGoals snapshot.
+  const w = g.last && g.last.ok !== false ? g.last.waitingOn : g.waitingOn;
+  if (w === 'user' || w === 'controller') return true;
+  const s = String(g.last?.state || g.state || '').toLowerCase();
+  return /gate|user_action|operator/.test(s);
+}
+
+// Symphony-style board: blocked-on-human first, then most actionable.
+const GROUP_ORDER = ['gated', 'run', 'wait', 'paused', 'error'];
+// The first three columns are the product ("what state, what needs me") and
+// stay visible even when empty; paused/error appear only with members.
+const ALWAYS_VISIBLE_COLUMNS = new Set(['gated', 'run', 'wait']);
 function goalGroup(g) {
-  if (g.errorCount > 0 || g.last?.ok === false) return 'error';
+  if (isGated(g)) return 'gated'; // gated outranks error: the human unlock is the story
+  if (g.errorCount > 0) return 'error';
   if (g.stopped) return 'paused';
   if (g.last?.shouldRun === true) return 'run';
   return 'wait';
 }
-const GROUP_I18N_KEY = { run: 'groupRun', wait: 'groupWait', paused: 'groupPaused', error: 'groupError' };
-
-function updateMetrics() {
-  const metrics = document.getElementById('metrics');
-  if (S.goals.size === 0) { metrics.hidden = true; return; }
-  metrics.hidden = false;
-  let monitored = 0, shouldRun = 0, paused = 0, errors = 0;
-  for (const g of S.goals.values()) {
-    if (g.monitoring) monitored += 1;
-    if (g.last?.shouldRun === true) shouldRun += 1;
-    if (g.stopped) paused += 1;
-    if (g.errorCount > 0) errors += 1;
-  }
-  document.getElementById('m-monitored').textContent = String(monitored);
-  document.getElementById('m-shouldrun').textContent = String(shouldRun);
-  const mPaused = document.getElementById('m-paused');
-  mPaused.textContent = String(paused);
-  mPaused.className = 'metric__value' + (paused > 0 ? ' metric__value--warn' : '');
-  const mErrors = document.getElementById('m-errors');
-  mErrors.textContent = String(errors);
-  mErrors.className = 'metric__value' + (errors > 0 ? ' metric__value--error' : '');
-}
+const GROUP_I18N_KEY = { gated: 'groupGated', run: 'groupRun', wait: 'groupWait', paused: 'groupPaused', error: 'groupError' };
+const GROUP_HINT_KEY = { gated: 'groupGatedHint', run: 'groupRunHint', wait: 'groupWaitHint', paused: 'groupPausedHint', error: 'groupErrorHint' };
 
 function fmtCountdown(ms) {
   if (ms <= 0) return '0:00';
@@ -308,6 +422,23 @@ function fmtCountdown(ms) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function fmtInterval(iv) {
+  return iv.toFixed(iv < 10 ? 1 : 0);
+}
+
+// Scheduler legibility: expose the interval arithmetic instead of a bare
+// number, so "why hasn't it polled" is answerable from the card.
+function goalMetaText(g) {
+  const now = Date.now();
+  if (g.polling) return '…';
+  if (g.errorCount > 0) return t('retryIn', g.errorCount, fmtCountdown(g.nextDueAt - now));
+  const cd = t('nextPoll', fmtCountdown(g.nextDueAt - now));
+  if (g.hint && g.unchangedCount > 0) {
+    return `${cd} · ${t('intervalMath', fmtInterval(g.intervalMin), fmtInterval(g.hint.base), g.hint.mult, g.unchangedCount, fmtInterval(g.hint.cap))}`;
+  }
+  return `${cd} · ${t('intervalPlain', fmtInterval(g.intervalMin))}`;
 }
 
 function showRawJson(g) {
@@ -318,43 +449,27 @@ function showRawJson(g) {
   document.getElementById('dlg-raw').showModal();
 }
 
-function renderGoal(g) {
-  // Group membership can change with every poll result, so re-render the
-  // whole grouped list; N is small (goals per registry).
+function renderGoal(_g) {
+  // Group membership can change with every poll result; renderAllGoals is
+  // fingerprint-throttled so unchanged results cost nothing.
   renderAllGoals();
 }
 
 function buildGoalCard(g) {
+  const group = goalGroup(g);
   const el = document.createElement('div');
   el.className = 'goal';
   el.id = `goal-${g.goalId}`;
 
   const head = document.createElement('div');
   head.className = 'goal__head';
+  const dot = document.createElement('span');
+  dot.className = `dot dot--${group}`;
+  head.appendChild(dot);
   const id = document.createElement('span');
   id.className = 'goal__id';
   id.textContent = g.goalId;
   head.appendChild(id);
-
-  const stateBadge = document.createElement('span');
-  stateBadge.className = 'badge';
-  stateBadge.textContent = g.last?.state ?? g.state ?? t('stateUnknown');
-  head.appendChild(stateBadge);
-
-  const routeBadge = document.createElement('span');
-  routeBadge.className = 'badge ' + routeBadgeClass(g.last);
-  routeBadge.textContent = g.last
-    ? (g.last.shouldRun === true ? 'should-run' : g.last.effectiveAction || 'wait')
-    : '…';
-  head.appendChild(routeBadge);
-
-  if (g.stopped) {
-    const paused = document.createElement('span');
-    paused.className = 'badge badge--paused';
-    paused.textContent = t('resume');
-    paused.onclick = () => pollNow(g);
-    head.appendChild(paused);
-  }
 
   const spacer = document.createElement('span');
   spacer.className = 'goal__spacer';
@@ -362,6 +477,7 @@ function buildGoalCard(g) {
 
   const toggle = document.createElement('label');
   toggle.className = 'toggle';
+  toggle.title = t('monitor');
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.checked = g.monitoring;
@@ -378,20 +494,31 @@ function buildGoalCard(g) {
   head.appendChild(toggle);
   el.appendChild(head);
 
-  if (g.last?.reason) {
-    const reason = document.createElement('div');
-    reason.className = 'goal__reason';
-    reason.textContent = g.last.reason;
-    el.appendChild(reason);
+  // Narration first (what to do / why); the raw payload stays behind JSON.
+  const narration = g.last?.recommendedAction || g.last?.reason || g.lastError;
+  if (narration) {
+    const line = document.createElement('div');
+    line.className = 'goal__reason' + (g.lastError ? ' goal__reason--err' : '');
+    line.textContent = narration;
+    if (g.last?.recommendedAction && g.last?.reason) line.title = g.last.reason;
+    el.appendChild(line);
   }
 
   const meta = document.createElement('div');
   meta.className = 'goal__meta';
+  const stateText = g.last?.state ?? g.state;
+  if (stateText) {
+    const st = document.createElement('span');
+    st.className = 'goal__state';
+    const waiting = g.last && g.last.ok !== false ? g.last.waitingOn : g.waitingOn;
+    st.textContent = waiting ? `${stateText} · ${t('waitingOn', waiting)}` : stateText;
+    meta.appendChild(st);
+  }
   if (g.monitoring && !g.stopped) {
     const cd = document.createElement('span');
-    cd.className = 'countdown';
+    cd.className = 'countdown' + (g.errorCount > 0 ? ' countdown--err' : '');
     cd.dataset.goal = g.goalId;
-    cd.textContent = g.polling ? '…' : t('nextPoll', fmtCountdown(g.nextDueAt - Date.now()), g.intervalMin.toFixed(g.intervalMin < 10 ? 1 : 0));
+    cd.textContent = goalMetaText(g);
     meta.appendChild(cd);
   }
   if (g.unchangedCount > 0) {
@@ -399,24 +526,43 @@ function buildGoalCard(g) {
     un.textContent = t('unchangedTimes', g.unchangedCount);
     meta.appendChild(un);
   }
-  if (g.errorCount > 0) {
-    const errSpan = document.createElement('span');
-    errSpan.className = 'badge badge--error';
-    errSpan.textContent = t('pollError', g.errorCount);
-    meta.appendChild(errSpan);
+  if (g.running) {
+    const run = document.createElement('span');
+    run.className = 'badge badge--run';
+    run.dataset.runGoal = g.goalId;
+    run.textContent = t('running', fmtCountdown(Date.now() - g.runStartedAt));
+    meta.appendChild(run);
+  } else if (g.lastRun) {
+    const lr = document.createElement('span');
+    lr.textContent = g.lastRun.cancelled
+      ? t('lastRunCancelled')
+      : t('lastRun', g.lastRun.exitCode, Math.round((g.lastRun.durationMs || 0) / 1000));
+    if (!g.lastRun.ok && !g.lastRun.cancelled) lr.className = 'goal__lastrun--err';
+    meta.appendChild(lr);
   }
   el.appendChild(meta);
 
   const actions = document.createElement('div');
   actions.className = 'goal__actions';
 
-  const agentLabel = document.createElement('span');
-  agentLabel.textContent = t('agent') + ':';
-  agentLabel.style.fontSize = '11.5px';
-  actions.appendChild(agentLabel);
+  if (g.stopped) {
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'btn btn--primary';
+    resume.textContent = t('resume');
+    resume.onclick = () => pollNow(g);
+    actions.appendChild(resume);
+  }
+
   if (g.agents.length > 0) {
     const sel = document.createElement('select');
-    for (const a of g.agents) {
+    sel.title = t('agent');
+    // A persisted agentId can fall out of the registered list; keep it as an
+    // explicit option so the display matches what CLI calls actually use.
+    const options = g.agentId && !g.agents.includes(g.agentId)
+      ? [...g.agents, g.agentId]
+      : g.agents;
+    for (const a of options) {
       const opt = document.createElement('option');
       opt.value = a;
       opt.textContent = a;
@@ -433,6 +579,7 @@ function buildGoalCard(g) {
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = t('agentFree');
+    input.title = t('agent');
     input.value = g.agentId;
     input.onchange = () => {
       g.agentId = input.value.trim();
@@ -440,6 +587,30 @@ function buildGoalCard(g) {
       saveConfig();
     };
     actions.appendChild(input);
+  }
+
+  if (g.running) {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = t('cancelRun');
+    cancelBtn.onclick = async () => {
+      cancelBtn.disabled = true;
+      try {
+        const res = await app.call('loopx.cancelRunOnce', { goalId: g.goalId });
+        if (!res.ok) log(`[${g.goalId}] cancel: ${res.error}`, true);
+      } catch (err) {
+        log(`[${g.goalId}] cancel error: ${err.message || err}`, true);
+      }
+    };
+    actions.appendChild(cancelBtn);
+  } else {
+    const runBtn = document.createElement('button');
+    runBtn.className = 'btn' + (g.last?.shouldRun === true ? ' btn--primary' : '');
+    runBtn.type = 'button';
+    runBtn.textContent = t('runOnce');
+    runBtn.onclick = () => confirmRunOnce(g);
+    actions.appendChild(runBtn);
   }
 
   const planBtn = document.createElement('button');
@@ -452,7 +623,7 @@ function buildGoalCard(g) {
     try {
       const res = await app.call('loopx.turnPlan', {
         argvPrefix: S.config.argvPrefix, projectDir: S.config.projectDir,
-        goalId: g.goalId, agentId: g.agentId,
+        goalId: g.goalId, agentId: g.agentId, host: S.config.host,
       });
       log(`[${g.goalId}] turn plan → ${res.route ?? JSON.stringify(res.raw)?.slice(0, 200)}`);
     } catch (err) {
@@ -460,14 +631,6 @@ function buildGoalCard(g) {
     } finally { planBtn.disabled = false; }
   };
   actions.appendChild(planBtn);
-
-  const runBtn = document.createElement('button');
-  runBtn.className = 'btn' + (g.last?.shouldRun === true ? ' btn--primary' : '');
-  runBtn.type = 'button';
-  runBtn.textContent = t('runOnce');
-  runBtn.disabled = g.running;
-  runBtn.onclick = () => confirmRunOnce(g);
-  actions.appendChild(runBtn);
 
   const rawBtn = document.createElement('button');
   rawBtn.className = 'btn';
@@ -481,60 +644,181 @@ function buildGoalCard(g) {
   return el;
 }
 
-function renderAllGoals() {
+// Fingerprint of everything the goal list displays except per-second
+// countdown text (the countdown loop patches those spans in place).
+function displayFingerprint() {
+  const parts = [String(S.goals.size), app.locale];
+  for (const g of S.goals.values()) {
+    parts.push([
+      g.goalId, goalGroup(g), g.polling, g.running, g.stopped, g.monitoring,
+      g.errorCount, g.unchangedCount, g.intervalMin.toFixed(2),
+      g.agents.join(','), g.agentId,
+      g.last ? decisionKey(g.last) : '',
+      g.last?.reason ?? '', g.last?.recommendedAction ?? '',
+      g.last?.state ?? g.state ?? '', g.last?.waitingOn ?? g.waitingOn ?? '',
+      g.lastError ?? '',
+      g.lastRun ? `${g.lastRun.exitCode}|${g.lastRun.cancelled}|${g.lastRun.durationMs}` : '',
+    ].join(''));
+  }
+  return parts.join('');
+}
+
+let lastFingerprint = '';
+
+function renderAllGoals(force = false) {
   const list = document.getElementById('goal-list');
+  const active = document.activeElement;
+  if (!force && active && list.contains(active)
+      && (active.tagName === 'INPUT' || active.tagName === 'SELECT')) {
+    // Never yank the DOM out from under the user's cursor; re-render on blur.
+    S.renderPending = true;
+    return;
+  }
+  const fp = displayFingerprint();
+  if (!force && fp === lastFingerprint) {
+    updateHeaderStatus();
+    return;
+  }
+  lastFingerprint = fp;
+
   const empty = document.getElementById('goals-empty');
   for (const child of [...list.children]) {
     if (child.id !== 'goals-empty') child.remove();
+  }
+  empty.hidden = S.goals.size > 0;
+  if (S.goals.size === 0) {
+    updateHeaderStatus();
+    return;
   }
   const buckets = new Map(GROUP_ORDER.map((k) => [k, []]));
   for (const g of S.goals.values()) buckets.get(goalGroup(g)).push(g);
   for (const key of GROUP_ORDER) {
     const goals = buckets.get(key);
-    if (goals.length === 0) continue;
-    const header = document.createElement('div');
-    header.className = 'group-header';
-    header.textContent = `${t(GROUP_I18N_KEY[key])} · ${goals.length}`;
-    list.appendChild(header);
-    for (const g of goals) list.appendChild(buildGoalCard(g));
+    if (goals.length === 0 && !ALWAYS_VISIBLE_COLUMNS.has(key)) continue;
+    const col = document.createElement('div');
+    col.className = `col col--${key}`;
+
+    const head = document.createElement('div');
+    head.className = 'col__head';
+    const dot = document.createElement('span');
+    dot.className = `dot dot--${key}`;
+    head.appendChild(dot);
+    const title = document.createElement('span');
+    title.className = 'col__title';
+    title.textContent = t(GROUP_I18N_KEY[key]);
+    head.appendChild(title);
+    const count = document.createElement('span');
+    count.className = 'col__count';
+    count.textContent = String(goals.length);
+    head.appendChild(count);
+    col.appendChild(head);
+
+    const hint = document.createElement('div');
+    hint.className = 'col__hint';
+    hint.textContent = t(GROUP_HINT_KEY[key]);
+    col.appendChild(hint);
+
+    const body = document.createElement('div');
+    body.className = 'col__body';
+    if (goals.length === 0) {
+      const none = document.createElement('div');
+      none.className = 'col__empty';
+      none.textContent = t('colEmpty');
+      body.appendChild(none);
+    }
+    for (const g of goals) body.appendChild(buildGoalCard(g));
+    col.appendChild(body);
+    list.appendChild(col);
   }
-  empty.hidden = S.goals.size > 0;
-  updateMetrics();
+  updateHeaderStatus();
 }
 
-// countdown repaint only — no CLI calls
+document.getElementById('goal-list').addEventListener('focusout', () => {
+  if (!S.renderPending) return;
+  S.renderPending = false;
+  // Not setTimeout(0): a focusout fired by mousedown on a card button would
+  // rebuild the DOM before mouseup, swallowing that click.
+  setTimeout(() => renderAllGoals(), 250);
+});
+
+// Header presence badge + global next-tick countdown: the single bit that
+// matters most for a console that owns the timer — is it armed right now?
+function updateHeaderStatus() {
+  const presence = document.getElementById('hb-presence');
+  const text = document.getElementById('hb-presence-text');
+  const next = document.getElementById('hb-next');
+  let mode = 'live';
+  if (S.detect && !S.detect.found) mode = 'nocli';
+  else if (S.paused) mode = 'paused';
+  else {
+    let armed = false;
+    for (const g of S.goals.values()) {
+      if (g.monitoring && !g.stopped) { armed = true; break; }
+    }
+    if (!armed) mode = 'idle';
+  }
+  presence.className = `presence presence--${mode}`;
+  text.textContent = t({ live: 'presenceLive', paused: 'presencePaused', idle: 'presenceIdle', nocli: 'presenceNoCli' }[mode]);
+
+  let anyPolling = false;
+  let earliest = Infinity;
+  for (const g of S.goals.values()) {
+    if (g.polling) anyPolling = true;
+    if (g.monitoring && !g.stopped && !g.polling && g.nextDueAt < earliest) earliest = g.nextDueAt;
+  }
+  if (anyPolling) next.textContent = t('hbChecking');
+  else if (mode === 'live' && earliest !== Infinity) next.textContent = t('hbNext', fmtCountdown(earliest - Date.now()));
+  else next.textContent = '';
+}
+
+// countdown repaint only — no CLI calls, no DOM rebuild
 function startCountdownLoop() {
   if (S.countdownTimer) clearInterval(S.countdownTimer);
   S.countdownTimer = setInterval(() => {
     for (const g of S.goals.values()) {
       const cd = document.querySelector(`.countdown[data-goal="${CSS.escape(g.goalId)}"]`);
-      if (cd && !g.polling) {
-        cd.textContent = t('nextPoll', fmtCountdown(g.nextDueAt - Date.now()), g.intervalMin.toFixed(g.intervalMin < 10 ? 1 : 0));
+      if (cd && !g.polling) cd.textContent = goalMetaText(g);
+      if (g.running) {
+        const run = document.querySelector(`[data-run-goal="${CSS.escape(g.goalId)}"]`);
+        if (run) run.textContent = t('running', fmtCountdown(Date.now() - g.runStartedAt));
       }
     }
+    updateHeaderStatus();
   }, 1000);
 }
 
 // ── run once ──────────────────────────────────────────────
-function confirmRunOnce(g) {
+async function confirmRunOnce(g) {
   if (!S.config.projectDir) { log(t('needProject'), true); return; }
   if (!g.agentId) { log(`[${g.goalId}] ${t('needAgent')}`, true); return; }
-  const argv = ['loopx', '--format', 'json',
-    '--registry', `${S.config.projectDir}/.loopx/registry.json`,
-    'turn', 'run-once', '--execute',
-    '--project', S.config.projectDir,
-    '--goal-id', g.goalId, '--agent-id', g.agentId];
-  if (S.config.host === 'codex-cli') {
-    argv.push('--host', 'codex-cli');
-    if (S.config.codexBin) argv.push('--codex-bin', S.config.codexBin);
-  } else if (S.config.host === 'generic-cli') {
-    argv.push('--host', 'generic-cli');
-    if (S.config.hostCommandJson) argv.push('--host-command-json', S.config.hostCommandJson);
+  if (S.config.host === 'generic-cli' && !S.config.hostCommandJson) {
+    log(`[${g.goalId}] ${t('needHostJson')}`, true);
+    return;
   }
-  argv.push('--timeout-seconds', String(S.config.timeoutSeconds));
-
-  document.getElementById('run-argv').textContent = argv.join(' ');
+  // Preview the exact argv the worker will spawn — single source of truth.
+  let preview;
+  try {
+    preview = await app.call('loopx.runOnceArgv', {
+      argvPrefix: S.config.argvPrefix,
+      srcDir: S.config.srcDir || null,
+      projectDir: S.config.projectDir,
+      goalId: g.goalId,
+      agentId: g.agentId,
+      host: S.config.host,
+      codexBin: S.config.codexBin || null,
+      hostCommandJson: S.config.hostCommandJson || null,
+      timeoutSeconds: S.config.timeoutSeconds,
+    });
+  } catch (err) {
+    log(`[${g.goalId}] run-once preview error: ${err.message || err}`, true);
+    return;
+  }
+  const shellish = preview.argv.map((a) => (/[\s"]/.test(a) ? JSON.stringify(a) : a)).join(' ');
+  document.getElementById('run-argv').textContent = preview.label ? `${preview.label} ${shellish}` : shellish;
   const dlg = document.getElementById('dlg-run');
+  // <dialog>.returnValue is sticky across opens: Esc keeps the previous
+  // value, so a stale 'run' would execute a cancelled turn. Reset it.
+  dlg.returnValue = 'cancel';
   dlg.onclose = () => {
     if (dlg.returnValue !== 'run') return;
     executeRunOnce(g);
@@ -544,30 +828,49 @@ function confirmRunOnce(g) {
 
 async function executeRunOnce(g) {
   g.running = true;
+  g.runStartedAt = Date.now();
   renderGoal(g);
   log(`[${g.goalId}] run-once started (agent=${g.agentId})`);
   try {
+    // Returns immediately ({started:true}); completion arrives on the
+    // worker:runOnce:done event so cancel/heartbeat RPCs are not queued
+    // behind a minutes-long call.
     await app.call('loopx.runOnce', {
       argvPrefix: S.config.argvPrefix,
+      srcDir: S.config.srcDir || null,
       projectDir: S.config.projectDir,
       goalId: g.goalId,
       agentId: g.agentId,
-      host: S.config.host || null,
+      host: S.config.host,
       codexBin: S.config.codexBin || null,
       hostCommandJson: S.config.hostCommandJson || null,
       timeoutSeconds: S.config.timeoutSeconds,
     });
   } catch (err) {
     log(`[${g.goalId}] run-once error: ${err.message || err}`, true);
-  } finally {
     g.running = false;
     renderGoal(g);
-    pollNow(g); // fresh decision + interval reset via changed decision/reset token
   }
 }
 
 app.on('worker:runOnce:log', ({ goalId, line }) => log(`[${goalId}] ${line}`));
-app.on('worker:runOnce:done', (d) => log(`[${d.goalId}] run-once done: exit=${d.exitCode} status=${d.status ?? '-'}`, !d.ok));
+app.on('worker:runOnce:done', (d) => {
+  const g = S.goals.get(d.goalId);
+  if (g) {
+    g.running = false;
+    g.lastRun = {
+      exitCode: d.exitCode, durationMs: d.durationMs || 0,
+      status: d.status, ok: d.ok, cancelled: !!d.cancelled,
+    };
+  }
+  if (d.cancelled) log(`[${d.goalId}] ${t('runCancelled')}`);
+  else if (d.error) log(`[${d.goalId}] run-once error: ${d.error}`, true);
+  else log(`[${d.goalId}] run-once done: exit=${d.exitCode} status=${d.status ?? '-'}`, !d.ok);
+  if (g) {
+    renderGoal(g);
+    pollNow(g); // fresh decision + interval reset via changed decision/reset token
+  }
+});
 
 // ── bootstrap / detection / goals ─────────────────────────
 function prefixLabel(p) {
@@ -580,13 +883,25 @@ function prefixLabel(p) {
 async function detect() {
   const banner = document.getElementById('banner-nodetect');
   try {
-    S.detect = await app.call('loopx.detect', { argvPrefix: S.config.argvPrefix });
+    S.detect = await app.call('loopx.detect', {
+      argvPrefix: S.config.argvPrefix,
+      srcDir: S.config.srcDir || null,
+    });
   } catch (err) {
     S.detect = { found: false, probes: [{ error: String(err.message || err) }] };
   }
+  updateHeaderStatus();
   if (S.detect.found) {
     banner.hidden = true;
-    if (!S.config.argvPrefix) { S.config.argvPrefix = S.detect.argvPrefix; saveConfig(); }
+    // Persist the working prefix — and heal a stale one: detect probes the
+    // persisted prefix first, so if the winner differs, the persisted one is
+    // broken (e.g. venv removed) and every poll would fail while the banner
+    // says "detected".
+    const detectedJson = JSON.stringify(S.detect.argvPrefix);
+    if (!S.config.argvPrefix || JSON.stringify(S.config.argvPrefix) !== detectedJson) {
+      S.config.argvPrefix = S.detect.argvPrefix;
+      saveConfig();
+    }
     log(t('detected', `${prefixLabel(S.detect.argvPrefix)} (${S.detect.version || '?'})`));
     return true;
   }
@@ -610,6 +925,7 @@ async function refreshGoals() {
       const existing = S.goals.get(info.goalId);
       if (existing) {
         existing.state = info.state ?? existing.state;
+        existing.waitingOn = info.waitingOn ?? existing.waitingOn;
         existing.agents = info.agents?.length ? info.agents : existing.agents;
       } else {
         S.goals.set(info.goalId, newGoalState(info.goalId, info));
@@ -618,7 +934,7 @@ async function refreshGoals() {
     for (const goalId of [...S.goals.keys()]) {
       if (!fresh.has(goalId)) S.goals.delete(goalId);
     }
-    renderAllGoals();
+    renderAllGoals(true);
     for (const g of S.goals.values()) {
       if (g.monitoring && g.nextDueAt === 0) pollGoal(g);
     }
@@ -646,7 +962,7 @@ document.getElementById('btn-project').addEventListener('click', async () => {
     await saveConfig();
     updateProjectLabel();
     S.goals.clear();
-    renderAllGoals();
+    renderAllGoals(true);
     await refreshGoals();
   } catch (err) {
     log(`dialog error: ${err.message || err}`, true);
@@ -660,11 +976,14 @@ document.getElementById('btn-retry-detect').addEventListener('click', async () =
 
 document.getElementById('btn-settings').addEventListener('click', () => {
   document.getElementById('set-prefix').value = S.config.argvPrefix ? JSON.stringify(S.config.argvPrefix) : '';
-  document.getElementById('set-host').value = S.config.host || '';
+  document.getElementById('set-srcdir').value = S.config.srcDir || '';
+  document.getElementById('set-host').value = S.config.host;
   document.getElementById('set-codexbin').value = S.config.codexBin || '';
   document.getElementById('set-hostjson').value = S.config.hostCommandJson || '';
   document.getElementById('set-timeout').value = String(S.config.timeoutSeconds);
+  syncHostFields();
   const dlg = document.getElementById('dlg-settings');
+  dlg.returnValue = 'cancel'; // avoid stale 'save' from a previous open
   dlg.onclose = async () => {
     if (dlg.returnValue !== 'save') return;
     const prefixText = document.getElementById('set-prefix').value.trim();
@@ -678,7 +997,8 @@ document.getElementById('btn-settings').addEventListener('click', () => {
     } else {
       S.config.argvPrefix = null;
     }
-    S.config.host = document.getElementById('set-host').value;
+    S.config.srcDir = document.getElementById('set-srcdir').value.trim();
+    S.config.host = document.getElementById('set-host').value === 'generic-cli' ? 'generic-cli' : 'codex-cli';
     S.config.codexBin = document.getElementById('set-codexbin').value.trim();
     S.config.hostCommandJson = document.getElementById('set-hostjson').value.trim();
     S.config.timeoutSeconds = Math.min(240, Math.max(10, Number(document.getElementById('set-timeout').value) || 120));
@@ -687,6 +1007,14 @@ document.getElementById('btn-settings').addEventListener('click', () => {
   };
   dlg.showModal();
 });
+
+// Show only the adapter field the selected host actually uses.
+function syncHostFields() {
+  const host = document.getElementById('set-host').value;
+  document.getElementById('field-codexbin').hidden = host !== 'codex-cli';
+  document.getElementById('field-hostjson').hidden = host !== 'generic-cli';
+}
+document.getElementById('set-host').addEventListener('change', syncHostFields);
 
 document.getElementById('btn-toggle-log').addEventListener('click', () => {
   document.getElementById('log-panel').classList.toggle('collapsed');
@@ -704,6 +1032,118 @@ document.getElementById('btn-copy-raw').addEventListener('click', async (e) => {
   }
 });
 
+// ── issue intake (paste a GitHub issue URL → todos into a goal) ──
+function openIssueDialog() {
+  const dlg = document.getElementById('dlg-issue');
+  const goalSel = document.getElementById('issue-goal');
+  goalSel.replaceChildren();
+  for (const id of S.goals.keys()) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    goalSel.appendChild(opt);
+  }
+  const noGoals = S.goals.size === 0;
+  document.getElementById('issue-nogoals').hidden = !noGoals;
+  goalSel.disabled = noGoals;
+  const box = document.getElementById('issue-preview');
+  box.hidden = true;
+  box.replaceChildren();
+  const writeBtn = document.getElementById('btn-issue-write');
+  writeBtn.disabled = true;
+  writeBtn.textContent = t('issueWrite', 0);
+  dlg.returnValue = 'cancel';
+  dlg.showModal();
+}
+
+function renderIssuePreview(res) {
+  const box = document.getElementById('issue-preview');
+  box.replaceChildren();
+  box.hidden = false;
+  const sig = res.issueSignal || {};
+  const sigLine = document.createElement('div');
+  sigLine.className = 'issue-preview__signal';
+  sigLine.textContent = [sig.repo, sig.issue_ref, sig.kind, sig.state].filter(Boolean).join(' · ')
+    + (Array.isArray(sig.labels) && sig.labels.length ? ` · ${sig.labels.join(', ')}` : '');
+  box.appendChild(sigLine);
+  const bp = res.branchPlan || {};
+  if (bp.issue_branch) {
+    const b = document.createElement('div');
+    b.className = 'issue-preview__line';
+    b.textContent = `${t('issueBranchLabel')}: ${bp.base_branch ?? '?'} → ${bp.issue_branch}`;
+    box.appendChild(b);
+  }
+  const todos = res.todosPreview || [];
+  if (todos.length) {
+    const label = document.createElement('div');
+    label.className = 'issue-preview__label';
+    label.textContent = `${t('issueTodosLabel')} · ${todos.length}`;
+    box.appendChild(label);
+    for (const td of todos) {
+      const row = document.createElement('div');
+      row.className = 'issue-preview__todo';
+      row.textContent = td.text;
+      row.title = `${td.taskClass} / ${td.actionKind ?? '-'}`;
+      box.appendChild(row);
+    }
+  }
+}
+
+async function parseIssueUrl() {
+  const url = document.getElementById('issue-url').value.trim();
+  if (!url) return;
+  const parseBtn = document.getElementById('btn-issue-parse');
+  parseBtn.disabled = true;
+  parseBtn.textContent = t('issueParsing');
+  try {
+    const res = await app.call('loopx.issueIntake', {
+      argvPrefix: S.config.argvPrefix, srcDir: S.config.srcDir || null,
+      projectDir: S.config.projectDir, url,
+    });
+    renderIssuePreview(res);
+    const n = (res.todosPreview || []).length;
+    const writeBtn = document.getElementById('btn-issue-write');
+    writeBtn.textContent = t('issueWrite', n);
+    writeBtn.disabled = !res.ok || n === 0 || S.goals.size === 0;
+    if (res.error) log(`issue intake: ${res.error}`, true);
+  } catch (err) {
+    log(`issue intake error: ${err.message || err}`, true);
+  } finally {
+    parseBtn.disabled = false;
+    parseBtn.textContent = t('issueParse');
+  }
+}
+
+async function writeIssueTodos() {
+  const goalId = document.getElementById('issue-goal').value;
+  const url = document.getElementById('issue-url').value.trim();
+  if (!goalId || !url) { log(t('issueNoGoals'), true); return; }
+  const writeBtn = document.getElementById('btn-issue-write');
+  writeBtn.disabled = true;
+  try {
+    const res = await app.call('loopx.issueIntake', {
+      argvPrefix: S.config.argvPrefix, srcDir: S.config.srcDir || null,
+      projectDir: S.config.projectDir, url, goalId, execute: true,
+    });
+    const written = res.written || [];
+    const okN = written.filter((w) => w.ok).length;
+    log(`[${goalId}] ${t('issueWritten', okN, written.length)}`, okN !== written.length);
+    for (const w of written.filter((x) => !x.ok)) {
+      log(`[${goalId}] todo add failed (${w.actionKind}): ${w.error}`, true);
+    }
+    document.getElementById('dlg-issue').close('done');
+    const g = S.goals.get(goalId);
+    if (g) pollNow(g); // heartbeat takes over from here
+  } catch (err) {
+    log(`issue intake error: ${err.message || err}`, true);
+    writeBtn.disabled = false;
+  }
+}
+
+document.getElementById('btn-issue').addEventListener('click', openIssueDialog);
+document.getElementById('btn-issue-parse').addEventListener('click', parseIssueUrl);
+document.getElementById('btn-issue-write').addEventListener('click', writeIssueTodos);
+
 // ── i18n ──────────────────────────────────────────────────
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -713,28 +1153,38 @@ function applyI18n() {
     if (el.getAttribute('data-i18n-attr') === 'title') el.title = value;
     else el.textContent = value;
   });
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const value = t(el.getAttribute('data-i18n-title'));
+    if (typeof value === 'string') el.title = value;
+  });
   updateProjectLabel();
 }
 
-app.onLocaleChange(() => {
+app.onLocaleChange((locale) => {
+  if (typeof locale === 'string') document.documentElement.setAttribute('lang', locale);
   applyI18n();
-  renderAllGoals();
+  renderAllGoals(true);
 });
 
 // ── lifecycle ─────────────────────────────────────────────
-app.onDeactivate(() => {
-  S.paused = true;
-  if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+// The host documents onActivate/onDeactivate but does not emit them yet;
+// keep the hooks (harmless, future-proof) and add two real signals:
+// visibilitychange for window minimise, IntersectionObserver for the
+// scene-tab display:none toggle (SceneViewport hides inactive tabs via CSS).
+app.onDeactivate(pauseHeartbeat);
+app.onActivate(resumeHeartbeat);
+let intersecting = true;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseHeartbeat();
+  else if (intersecting) resumeHeartbeat();
 });
-app.onActivate(() => {
-  if (!S.paused) return;
-  S.paused = false;
-  const now = Date.now();
-  for (const g of S.goals.values()) {
-    if (g.monitoring && !g.stopped && g.nextDueAt <= now) pollGoal(g);
-  }
-  rearmTimer();
+const visObserver = new IntersectionObserver((entries) => {
+  intersecting = entries[entries.length - 1].isIntersecting;
+  if (!intersecting) pauseHeartbeat();
+  else if (!document.hidden) resumeHeartbeat();
 });
+visObserver.observe(document.body);
+
 window.addEventListener('beforeunload', () => {
   if (S.timer) clearTimeout(S.timer);
   if (S.countdownTimer) clearInterval(S.countdownTimer);
@@ -746,5 +1196,6 @@ window.addEventListener('beforeunload', () => {
   await loadConfig();
   applyI18n();
   startCountdownLoop();
+  updateHeaderStatus();
   if (await detect()) await refreshGoals();
 })();

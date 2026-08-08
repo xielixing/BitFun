@@ -1,7 +1,7 @@
 // LoopX Console MiniApp — Worker (Node.js/Bun).
 // Wraps the loopx CLI (`loopx --format json …`). The host heartbeat lives in
 // ui.js; this worker is stateless per call except for the cached invocation
-// prefix and the per-goal run-once in-flight guard.
+// prefix and the per-goal run-once in-flight registry.
 
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -10,19 +10,17 @@ const path = require('path');
 
 // Invocation candidates, probed in order. `python -m loopx` does NOT work
 // (loopx has no __main__.py) — the module form must target loopx.cli.
-// Entries may carry an env overlay: when loopx isn't pip-installed, running
-// from a source checkout via PYTHONPATH is the last resort.
-const DEFAULT_LOOPX_SRC_DIR = 'D:\\loopx';
+// A source checkout (srcDir, set in the UI settings) is the last resort,
+// injected via PYTHONPATH.
 function candidatePrefixes(srcDir) {
   const list = [
     { argv: ['loopx'] },
     { argv: ['python', '-m', 'loopx.cli'] },
     { argv: ['py', '-3', '-m', 'loopx.cli'] },
   ];
-  const src = srcDir || DEFAULT_LOOPX_SRC_DIR;
-  if (src && fs.existsSync(path.join(src, 'loopx', 'cli.py'))) {
-    list.push({ argv: ['python', '-m', 'loopx.cli'], env: { PYTHONPATH: src } });
-    list.push({ argv: ['py', '-3', '-m', 'loopx.cli'], env: { PYTHONPATH: src } });
+  if (srcDir && fs.existsSync(path.join(srcDir, 'loopx', 'cli.py'))) {
+    list.push({ argv: ['python', '-m', 'loopx.cli'], env: { PYTHONPATH: srcDir } });
+    list.push({ argv: ['py', '-3', '-m', 'loopx.cli'], env: { PYTHONPATH: srcDir } });
   }
   return list;
 }
@@ -30,9 +28,64 @@ function candidatePrefixes(srcDir) {
 const DEFAULT_TIMEOUT_MS = 60000;
 
 let cachedPrefix = null; // { argv, env }
-const runOnceInFlight = new Set(); // goalIds with an active run-once
+const runOnceChildren = new Map(); // goalId -> { child, cancelled }
 
-function spawnLoopx(prefix, args, { timeoutMs = DEFAULT_TIMEOUT_MS, onLine = null } = {}) {
+// loopx is a Python CLI; on zh-CN Windows its stdout defaults to GBK, which
+// breaks both JSON.parse and any non-ASCII reason strings. Force UTF-8, and
+// prepend (never clobber) PYTHONPATH from a source-checkout overlay.
+function buildEnv(envOverlay) {
+  const env = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+  if (envOverlay) {
+    for (const [key, value] of Object.entries(envOverlay)) {
+      if (key === 'PYTHONPATH' && env.PYTHONPATH) {
+        env.PYTHONPATH = value + path.delimiter + env.PYTHONPATH;
+      } else {
+        env[key] = value;
+      }
+    }
+  }
+  return env;
+}
+
+// child.kill() only terminates the direct child; on Windows the interesting
+// work (python → codex …) lives in grandchildren. Kill the whole tree.
+function killTree(child) {
+  if (!child || child.killed || child.exitCode !== null) return;
+  if (process.platform === 'win32') {
+    try {
+      const tk = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+      tk.on('error', () => child.kill());
+    } catch (_) {
+      child.kill();
+    }
+  } else {
+    child.kill();
+  }
+}
+
+function makeLineSplitter(onLine) {
+  let buf = '';
+  return {
+    push(text) {
+      buf += text;
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).replace(/\r$/, '');
+        buf = buf.slice(idx + 1);
+        if (line.trim()) onLine(line);
+      }
+    },
+    flush() {
+      if (buf.trim()) onLine(buf.trim());
+      buf = '';
+    },
+  };
+}
+
+// onStderrLine streams progress (loopx logs to stderr while running; in
+// --format json mode stdout carries exactly one JSON document at exit, so
+// streaming stdout lines would only replay the final payload as noise).
+function spawnLoopx(prefix, args, { timeoutMs = DEFAULT_TIMEOUT_MS, onStderrLine = null, onSpawned = null } = {}) {
   const argv = Array.isArray(prefix) ? prefix : prefix.argv;
   const envOverlay = Array.isArray(prefix) ? null : prefix.env;
   return new Promise((resolve, reject) => {
@@ -40,34 +93,31 @@ function spawnLoopx(prefix, args, { timeoutMs = DEFAULT_TIMEOUT_MS, onLine = nul
     const child = spawn(cmd, [...prefixArgs, ...args], {
       shell: false,
       windowsHide: true,
-      env: envOverlay ? { ...process.env, ...envOverlay } : process.env,
+      env: buildEnv(envOverlay),
     });
+    if (onSpawned) onSpawned(child);
     let stdout = '';
     let stderr = '';
-    let lineBuf = '';
+    // setEncoding routes chunks through a StringDecoder, so multibyte UTF-8
+    // sequences split across 64KB pipe chunks decode correctly (quota status
+    // payloads run to hundreds of KB with CJK text).
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    const errSplitter = onStderrLine ? makeLineSplitter(onStderrLine) : null;
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill();
+      killTree(child);
       reject(new Error(`loopx timed out after ${timeoutMs}ms: ${args.join(' ')}`));
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      stdout += text;
-      if (onLine) {
-        lineBuf += text;
-        let idx;
-        while ((idx = lineBuf.indexOf('\n')) >= 0) {
-          const line = lineBuf.slice(0, idx).replace(/\r$/, '');
-          lineBuf = lineBuf.slice(idx + 1);
-          if (line.trim()) onLine(line);
-        }
-      }
+      stdout += chunk;
     });
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8');
+      stderr += chunk;
+      if (errSplitter) errSplitter.push(chunk);
     });
     child.on('error', (err) => {
       if (settled) return;
@@ -79,14 +129,14 @@ function spawnLoopx(prefix, args, { timeoutMs = DEFAULT_TIMEOUT_MS, onLine = nul
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (onLine && lineBuf.trim()) onLine(lineBuf.trim());
+      if (errSplitter) errSplitter.flush();
       resolve({ code, stdout, stderr });
     });
   });
 }
 
 // loopx prints one JSON document on stdout in --format json mode; tolerate
-// leading log noise by scanning for the first parseable top-level object.
+// noise before the document and (best-effort) after it.
 function parseJsonPayload(stdout) {
   const text = stdout.trim();
   if (!text) return null;
@@ -98,6 +148,12 @@ function parseJsonPayload(stdout) {
     try {
       return JSON.parse(text.slice(start));
     } catch (_) {}
+    const end = text.lastIndexOf('}');
+    if (end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch (_) {}
+    }
   }
   return null;
 }
@@ -111,25 +167,36 @@ function normalizePrefix(p) {
   return null;
 }
 
-async function resolvePrefix(argvPrefix) {
+async function resolvePrefix(argvPrefix, srcDir = null) {
   const normalized = normalizePrefix(argvPrefix);
   if (normalized) return normalized;
   if (cachedPrefix) return cachedPrefix;
-  const detected = await detectLoopx(null);
+  const detected = await detectLoopx(null, srcDir);
   if (!detected.found) {
-    throw new Error('loopx CLI not found. Install with: pip install -e D:\\loopx');
+    throw new Error(
+      'loopx CLI not found. Install it (pip install -e <checkout>), '
+      + 'or set the invocation command or source directory in Settings.'
+    );
   }
   return normalizePrefix(detected.argvPrefix) || { argv: detected.argvPrefix };
 }
 
 function registryArgs(projectDir) {
-  if (!projectDir) return []; // fall back to loopx's global registry
+  if (!projectDir) return []; // loopx falls back to its global registry
   return ['--registry', path.join(projectDir, '.loopx', 'registry.json')];
 }
 
 async function runJson(argvPrefix, projectDir, args, opts = {}) {
-  const prefix = await resolvePrefix(argvPrefix);
-  const result = await spawnLoopx(prefix, ['--format', 'json', ...registryArgs(projectDir), ...args], opts);
+  const prefix = await resolvePrefix(argvPrefix, opts.srcDir || null);
+  let result;
+  try {
+    result = await spawnLoopx(prefix, ['--format', 'json', ...registryArgs(projectDir), ...args], opts);
+  } catch (err) {
+    // A cached prefix can go stale (venv removed, PATH change): drop it so
+    // the next call re-probes instead of failing forever.
+    if (err && err.code === 'ENOENT' && prefix === cachedPrefix) cachedPrefix = null;
+    throw err;
+  }
   const payload = parseJsonPayload(result.stdout);
   return { result, payload, prefix };
 }
@@ -157,6 +224,11 @@ async function detectLoopx(customPrefix, srcDir = null) {
 
 function resolveRegistryPath(projectDir) {
   if (projectDir) return path.join(projectDir, '.loopx', 'registry.json');
+  // Mirror the CLI: LOOPX_REGISTRY wins only if the file exists; otherwise
+  // loopx itself falls back to the global registry.
+  if (process.env.LOOPX_REGISTRY && fs.existsSync(process.env.LOOPX_REGISTRY)) {
+    return process.env.LOOPX_REGISTRY;
+  }
   return path.join(os.homedir(), '.codex', 'loopx', 'registry.global.json');
 }
 
@@ -171,8 +243,9 @@ function readRegistry(projectDir) {
 
 function normalizeScheduler(schedulerHint) {
   if (!schedulerHint || typeof schedulerHint !== 'object') return null;
-  // Hot path: reset token + codex_app fallback. Cold path (--include-detail
-  // scheduler): the local_scheduler block the heartbeat actually wants.
+  // Hot path: reset token + codex_app fallback. Cold path
+  // (--include-scheduler-detail): the local_scheduler block the heartbeat
+  // actually wants.
   const cold = schedulerHint.cold_path_detail && schedulerHint.cold_path_detail.local_scheduler;
   const codexApp = schedulerHint.codex_app || {};
   const local = cold || {};
@@ -189,8 +262,62 @@ function normalizeScheduler(schedulerHint) {
     afterLimit: local.after_limit ?? afterLimits.local_scheduler ?? null,
     exampleProgression: local.example_progression_minutes ?? null,
     resetToken: resetPolicy.reset_token ?? null,
+    cadenceClass: schedulerHint.cadence_class ?? null,
+    action: schedulerHint.action ?? null,
+    unchangedIdentityKeys: Array.isArray(schedulerHint.unchanged_identity_keys)
+      ? schedulerHint.unchanged_identity_keys
+      : null,
     source: cold ? 'local_scheduler' : 'codex_app_fallback',
   };
+}
+
+// The mini-app's own execution path is the outer-controller variant; plan for
+// the same context so the previewed route matches what run-once will do.
+function turnContextArgs(host) {
+  return [
+    '--host', host === 'codex-cli' ? 'codex-cli' : 'generic-cli',
+    '--execution-mode', 'isolated-headless',
+    '--scheduler-owner', 'outer_controller',
+  ];
+}
+
+// Single source of truth for run-once argv: the confirmation dialog previews
+// exactly what runOnce will spawn.
+function buildRunOnceArgs({ projectDir, goalId, agentId, host, codexBin, hostCommandJson, timeoutSeconds }) {
+  const args = [
+    '--format', 'json',
+    ...registryArgs(projectDir),
+    'turn', 'run-once', '--execute',
+    '--project', projectDir,
+    '--goal-id', goalId,
+    '--agent-id', agentId,
+  ];
+  if (host === 'codex-cli') {
+    args.push('--host', 'codex-cli');
+    if (codexBin) args.push('--codex-bin', codexBin);
+  } else {
+    // loopx defaults turn run-once to generic-cli anyway; make it explicit.
+    args.push('--host', 'generic-cli');
+    if (hostCommandJson) args.push('--host-command-json', hostCommandJson);
+  }
+  // The mini-app IS the outer controller for both hosts. Without this flag,
+  // run-once under codex-cli resolves scheduler_owner=agent_cli_loop and the
+  // recorded execution context / cadence-ownership hints diverge from what
+  // plan and the heartbeat use.
+  args.push('--scheduler-owner', 'outer_controller');
+  if (timeoutSeconds) args.push('--timeout-seconds', String(timeoutSeconds));
+  return args;
+}
+
+function validateRunOnceParams({ projectDir, goalId, agentId, host, hostCommandJson }) {
+  if (!goalId || !agentId) throw new Error('loopx.runOnce: goalId and agentId are required');
+  if (!projectDir) throw new Error('loopx.runOnce: projectDir is required (--project)');
+  if (host !== 'codex-cli' && !hostCommandJson) {
+    throw new Error(
+      'loopx.runOnce: host generic-cli requires host-command-json (a JSON argv array for the adapter). '
+      + 'Pick codex-cli or configure the adapter in Settings.'
+    );
+  }
 }
 
 module.exports = {
@@ -201,6 +328,92 @@ module.exports = {
   async 'loopx.doctor'({ argvPrefix = null, projectDir = null } = {}) {
     const { result, payload } = await runJson(argvPrefix, projectDir, ['doctor']);
     return { ok: result.code === 0, payload, stderr: result.stderr };
+  },
+
+  // "Paste an issue URL" glue: preview via `issue-fix workflow-plan
+  // --fetch-metadata`, then (execute=true) materialize the ordered todo
+  // preview into a goal with plain `loopx todo add` calls. Uses only
+  // shipped loopx CLI surface — no loopx-side changes.
+  async 'loopx.issueIntake'({
+    argvPrefix = null,
+    srcDir = null,
+    projectDir = null,
+    url,
+    goalId = null,
+    execute = false,
+  } = {}) {
+    if (!url || !/^https:\/\/github\.com\//.test(String(url).trim())) {
+      throw new Error('loopx.issueIntake: url must be a public https://github.com/ issue or PR link');
+    }
+    const planArgsBase = ['issue-fix', 'workflow-plan', '--url', String(url).trim()];
+    if (projectDir) planArgsBase.push('--repo-path', projectDir);
+    // Prefer live GitHub metadata; fall back to offline URL-only parsing when
+    // the fetch fails (private/nonexistent repo, no network).
+    let result, payload;
+    ({ result, payload } = await runJson(argvPrefix, projectDir, [
+      ...planArgsBase, '--fetch-metadata', '--fetch-timeout-seconds', '20',
+    ], { srcDir, timeoutMs: 90000 }));
+    let fetchedMetadata = true;
+    const planEmpty = (p) => !p || p.ok === false
+      || !(p.ordered_loopx_todo_writeback_preview || []).length;
+    if (planEmpty(payload)) {
+      fetchedMetadata = false;
+      ({ result, payload } = await runJson(argvPrefix, projectDir, planArgsBase, {
+        srcDir, timeoutMs: 90000,
+      }));
+    }
+    if (!payload) {
+      return { ok: false, error: result.stderr.trim() || 'loopx returned no JSON payload', raw: null };
+    }
+    const preview = (payload.ordered_loopx_todo_writeback_preview || [])
+      .filter((e) => e && e.task_class && e.text)
+      .map((e) => ({
+        order: e.planner_order ?? null,
+        role: e.role || 'agent',
+        priority: e.priority ?? null,
+        taskClass: e.task_class,
+        actionKind: e.action_kind ?? null,
+        text: e.text,
+      }));
+    const intake = {
+      ok: result.code === 0 && payload.ok !== false,
+      fetchedMetadata,
+      issueSignal: payload.issue_signal ?? null,
+      branchPlan: payload.branch_plan ?? null,
+      feasibilityRoutes: payload.feasibility_checkpoint_plan?.routes ?? null,
+      todosPreview: preview,
+      raw: payload,
+    };
+    if (!execute) return intake;
+
+    if (!goalId) throw new Error('loopx.issueIntake: goalId is required to write todos');
+    if (!preview.length) return { ...intake, ok: false, error: 'workflow-plan produced no writable todos' };
+    const repoLabel = payload.issue_signal?.repo || null;
+    const written = [];
+    for (const t of preview) {
+      const args = [
+        'todo', 'add',
+        '--goal-id', goalId,
+        '--role', t.role,
+        '--task-class', t.taskClass,
+        '--text', t.text,
+      ];
+      if (t.actionKind) args.push('--action-kind', t.actionKind);
+      if (repoLabel) args.push('--task-repository', `git:github.com/${repoLabel}`);
+      try {
+        const r = await runJson(argvPrefix, projectDir, args, { srcDir });
+        const ok = r.result.code === 0 && r.payload?.ok !== false;
+        written.push({
+          actionKind: t.actionKind,
+          ok,
+          todoId: r.payload?.todo_id ?? null,
+          error: ok ? null : (r.payload?.error || r.result.stderr.slice(0, 200) || 'todo add failed'),
+        });
+      } catch (err) {
+        written.push({ actionKind: t.actionKind, ok: false, todoId: null, error: String(err.message || err) });
+      }
+    }
+    return { ...intake, written, ok: intake.ok && written.every((w) => w.ok) };
   },
 
   async 'loopx.listGoals'({ argvPrefix = null, projectDir = null } = {}) {
@@ -259,7 +472,7 @@ module.exports = {
       'quota', 'should-run',
       '--goal-id', goalId,
       '--runtime-profile', 'outer_controller',
-      '--include-detail', 'scheduler',
+      '--include-scheduler-detail',
     ];
     if (agentId) args.push('--agent-id', agentId);
     const { result, payload } = await runJson(argvPrefix, projectDir, args);
@@ -273,20 +486,50 @@ module.exports = {
       state: payload.state ?? null,
       effectiveAction: payload.effective_action ?? null,
       reason: payload.reason ?? null,
+      recommendedAction: payload.recommended_action ?? null,
+      waitingOn: payload.waiting_on ?? null,
       scheduler: normalizeScheduler(payload.scheduler_hint),
       raw: payload,
     };
   },
 
-  async 'loopx.turnPlan'({ argvPrefix = null, projectDir = null, goalId, agentId } = {}) {
+  async 'loopx.turnPlan'({ argvPrefix = null, projectDir = null, goalId, agentId, host = null } = {}) {
     if (!goalId || !agentId) throw new Error('loopx.turnPlan: goalId and agentId are required');
     const { result, payload } = await runJson(argvPrefix, projectDir, [
       'turn', 'plan', '--goal-id', goalId, '--agent-id', agentId,
+      ...turnContextArgs(host),
     ]);
     const route = payload && (payload.route?.kind ?? payload.route ?? null);
     return { ok: result.code === 0, route, raw: payload, stderr: result.stderr };
   },
 
+  // Returns the exact argv runOnce would spawn, for the confirmation dialog.
+  async 'loopx.runOnceArgv'(params = {}) {
+    validateRunOnceParams(params);
+    const prefix = await resolvePrefix(params.argvPrefix, params.srcDir);
+    const argv = [...prefix.argv, ...buildRunOnceArgs(params)];
+    return {
+      argv,
+      label: prefix.env && prefix.env.PYTHONPATH ? `PYTHONPATH=${prefix.env.PYTHONPATH}` : null,
+    };
+  },
+
+  async 'loopx.cancelRunOnce'({ goalId } = {}) {
+    const entry = runOnceChildren.get(goalId);
+    if (!entry) return { ok: false, error: `no run in flight for goal "${goalId}"` };
+    if (entry.child && entry.child.exitCode !== null) {
+      return { ok: false, error: 'run already finished' };
+    }
+    entry.cancelled = true;
+    killTree(entry.child); // no-op while child is null; onSpawned re-checks
+    return { ok: true };
+  },
+
+  // Starts the turn and returns immediately. The host serializes worker RPCs
+  // per app behind a mutex, so holding this RPC open for the whole turn would
+  // queue cancelRunOnce — and every heartbeat poll — behind it for minutes.
+  // Completion is reported on the runOnce:done event channel (stderr events
+  // bypass the RPC mutex).
   async 'loopx.runOnce'({
     argvPrefix = null,
     projectDir = null,
@@ -296,46 +539,63 @@ module.exports = {
     codexBin = null,
     hostCommandJson = null,
     timeoutSeconds = null,
+    srcDir = null,
   } = {}) {
-    if (!goalId || !agentId) throw new Error('loopx.runOnce: goalId and agentId are required');
-    if (!projectDir) throw new Error('loopx.runOnce: projectDir is required (--project)');
-    if (runOnceInFlight.has(goalId)) {
+    const params = { projectDir, goalId, agentId, host, codexBin, hostCommandJson, timeoutSeconds };
+    validateRunOnceParams(params);
+    if (runOnceChildren.has(goalId)) {
       throw new Error(`loopx.runOnce: a run for goal "${goalId}" is already in flight`);
     }
-    runOnceInFlight.add(goalId);
-    try {
-      const args = [
-        'turn', 'run-once', '--execute',
-        '--project', projectDir,
-        '--goal-id', goalId,
-        '--agent-id', agentId,
-      ];
-      if (host === 'codex-cli') {
-        args.push('--host', 'codex-cli');
-        if (codexBin) args.push('--codex-bin', codexBin);
-      } else if (host === 'generic-cli') {
-        args.push('--host', 'generic-cli');
-        if (hostCommandJson) args.push('--host-command-json', hostCommandJson);
+    const entry = { child: null, cancelled: false };
+    runOnceChildren.set(goalId, entry);
+    const startedAt = Date.now();
+    // With no RPC held open, the host's 3-minute idle reaper could kill this
+    // worker mid-turn if loopx stays quiet; every event is a stderr line and
+    // refreshes the host's last-activity clock, so tick once a minute.
+    const keepalive = setInterval(() => {
+      global.rpcEmit('runOnce:tick', { goalId, elapsedMs: Date.now() - startedAt });
+    }, 60000);
+    (async () => {
+      try {
+        const args = buildRunOnceArgs(params);
+        const prefix = await resolvePrefix(argvPrefix, srcDir);
+        if (entry.cancelled) throw new Error('cancelled before spawn');
+        const cliTimeoutMs = ((Number(timeoutSeconds) || 120) + 60) * 1000;
+        const result = await spawnLoopx(prefix, args, {
+          timeoutMs: cliTimeoutMs,
+          onStderrLine: (line) => global.rpcEmit('runOnce:log', { goalId, line }),
+          onSpawned: (child) => {
+            entry.child = child;
+            if (entry.cancelled) killTree(child); // cancel raced the spawn
+          },
+        });
+        const payload = parseJsonPayload(result.stdout);
+        global.rpcEmit('runOnce:done', {
+          ok: result.code === 0 && !entry.cancelled,
+          goalId,
+          exitCode: result.code,
+          cancelled: entry.cancelled,
+          durationMs: Date.now() - startedAt,
+          status: payload?.status ?? null,
+          raw: payload,
+          stderr: result.stderr.slice(-4000),
+        });
+      } catch (err) {
+        global.rpcEmit('runOnce:done', {
+          ok: false,
+          goalId,
+          exitCode: null,
+          cancelled: entry.cancelled,
+          durationMs: Date.now() - startedAt,
+          status: null,
+          raw: null,
+          error: String(err.message || err),
+        });
+      } finally {
+        clearInterval(keepalive);
+        runOnceChildren.delete(goalId);
       }
-      if (timeoutSeconds) args.push('--timeout-seconds', String(timeoutSeconds));
-
-      const cliTimeoutMs = ((Number(timeoutSeconds) || 120) + 60) * 1000;
-      const { result, payload } = await runJson(argvPrefix, projectDir, args, {
-        timeoutMs: cliTimeoutMs,
-        onLine: (line) => global.rpcEmit('runOnce:log', { goalId, line }),
-      });
-      const done = {
-        ok: result.code === 0,
-        goalId,
-        exitCode: result.code,
-        status: payload?.status ?? null,
-        raw: payload,
-        stderr: result.stderr.slice(-4000),
-      };
-      global.rpcEmit('runOnce:done', done);
-      return done;
-    } finally {
-      runOnceInFlight.delete(goalId);
-    }
+    })();
+    return { started: true, goalId };
   },
 };
