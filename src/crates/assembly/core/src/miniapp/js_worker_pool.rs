@@ -19,7 +19,6 @@ use bitfun_services_integrations::miniapp::worker_pool::{
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub struct JsWorkerPool {
     inner: ServiceJsWorkerPool,
@@ -50,7 +49,7 @@ impl JsWorkerPool {
         worker_revision: &str,
         policy_json: &str,
         node_perms: Option<&NodePermissions>,
-    ) -> BitFunResult<Arc<Mutex<JsWorker>>> {
+    ) -> BitFunResult<Arc<JsWorker>> {
         self.inner
             .get_or_spawn(app_id, worker_revision, policy_json, node_perms)
             .await
@@ -65,7 +64,7 @@ impl JsWorkerPool {
         worker_revision: &str,
         policy_json: &str,
         node_perms: Option<&NodePermissions>,
-    ) -> BitFunResult<Arc<Mutex<JsWorker>>> {
+    ) -> BitFunResult<Arc<JsWorker>> {
         self.inner
             .get_or_spawn_with_app_dir(
                 worker_key,
