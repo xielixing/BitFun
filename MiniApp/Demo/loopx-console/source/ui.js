@@ -17,7 +17,7 @@ const I18N = {
     retry: '重试',
     notFoundTitle: '未检测到 loopx CLI',
     notFoundHint: '请先安装 loopx（对源码 checkout 执行 pip install -e），或在设置中指定调用命令 / 源码目录，然后点击重试。',
-    goalsEmpty: '尚无目标。选择一个包含 .loopx/registry.json 的项目目录，或在 loopx 中创建目标。',
+    goalsEmpty: '尚无任务',
     onboardTitle: '开始使用',
     onboardStep1: '安装 loopx：对源码 checkout 执行 pip install -e <目录>（左上角出现红色横幅说明还没检测到）',
     onboardStep2: '选择数据源：默认读"全局 Registry"——loopx 用 sync-global 把所有项目的 goals 汇总到 ~/.codex/loopx/registry.global.json；点上方文件夹按钮可改为读某个项目的 .loopx/registry.json',
@@ -51,6 +51,7 @@ const I18N = {
     setHost: 'Run-once host',
     setCodexBin: 'codex 可执行文件路径',
     setHostJson: 'host-command-json（generic-cli 适配器 argv）',
+    setValidationJson: 'validation-command-json（独立校验器 argv）',
     setTimeout: 'Run-once 超时（秒，≤240）',
     needProject: '执行 run-once 需要先选择项目目录',
     needAgent: '该目标没有已注册的 agent，请先填写 agent id',
@@ -88,6 +89,47 @@ const I18N = {
     hbNext: (t) => `下次心跳 ${t}`,
     hbChecking: '正在检查…',
     runCancelled: '运行已取消',
+    groupBacklog: '待处理',
+    groupReady: '待执行',
+    groupActive: '进行中',
+    groupReview: '人工确认',
+    hiddenStates: '隐藏状态',
+    groupDone: '已完成',
+    detailOverview: '当前动作',
+    detailStatus: '状态',
+    detailState: '阶段',
+    detailControls: '执行设置',
+    detailAgent: 'Agent',
+    detailHeartbeat: '心跳',
+    detailLastRun: '最近执行',
+    detailSchedule: '下次轮询',
+    taskPlaceholder: '描述你想完成的目标，或粘贴 GitHub Issue / 仓库链接',
+    taskCreate: '创建任务',
+    taskCreating: '正在创建任务…',
+    taskPendingLabel: '正在创建',
+    taskStageCreating: '正在创建 LoopX 任务',
+    taskStageStarting: '任务已创建，正在启动 Agent',
+    taskStarted: (id) => `任务 ${id} 已创建并开始执行`,
+    activityTitle: '实时活动',
+    activityStarting: '正在启动 Agent…',
+    activityRunning: (elapsed) => `Agent 正在执行 · 已用时 ${elapsed}`,
+    activityCommitted: 'LoopX 已提交本次执行结果',
+    activityValidationPassed: '独立校验已通过',
+    activityValidationFailed: '独立校验未通过',
+    activityStateUpdated: '目标状态已更新',
+    activityCompleted: '执行已完成',
+    activityCompletedValidated: '执行已完成 · 校验通过',
+    activityFailed: '执行失败',
+    taskGoal: '普通目标',
+    taskRepository: 'GitHub 仓库',
+    taskIssue: 'GitHub Issue',
+    taskIssues: (n) => `${n} 个 Issue`,
+    taskNeedProject: '请先选择这个任务对应的本地项目目录。',
+    taskNeedAgent: '请先在设置中配置新任务默认 Agent。',
+    taskCreated: (id) => `任务 ${id} 已创建`,
+    taskRepoMismatch: (expected, actual) => `链接指向 ${expected}，当前项目是 ${actual}。请切换到正确的本地 checkout。`,
+    taskMultipleRepos: '一个任务只能绑定一个本地仓库，请把不同仓库的链接拆成多个任务。',
+    setDefaultAgent: '新任务默认 Agent',
   },
   'en-US': {
     title: 'LoopX Console',
@@ -98,7 +140,7 @@ const I18N = {
     retry: 'Retry',
     notFoundTitle: 'loopx CLI not found',
     notFoundHint: 'Install loopx first (pip install -e on a source checkout), or set the invocation command / source directory in Settings, then retry.',
-    goalsEmpty: 'No goals yet. Pick a project directory containing .loopx/registry.json, or create goals in loopx.',
+    goalsEmpty: 'No tasks yet',
     onboardTitle: 'Getting started',
     onboardStep1: 'Install loopx: run pip install -e <dir> on a source checkout (a red banner up top means it is not detected yet)',
     onboardStep2: 'Pick a data source: by default this reads the "global registry" — loopx aggregates every project\'s goals into ~/.codex/loopx/registry.global.json via sync-global; use the folder button above to read one project\'s .loopx/registry.json instead',
@@ -132,6 +174,7 @@ const I18N = {
     setHost: 'Run-once host',
     setCodexBin: 'codex binary path',
     setHostJson: 'host-command-json (generic-cli adapter argv)',
+    setValidationJson: 'validation-command-json (independent validator argv)',
     setTimeout: 'Run-once timeout (seconds, ≤240)',
     needProject: 'Run-once requires a project directory',
     needAgent: 'This goal has no registered agent — type an agent id first',
@@ -169,6 +212,47 @@ const I18N = {
     hbNext: (t) => `next tick in ${t}`,
     hbChecking: 'checking now…',
     runCancelled: 'run cancelled',
+    groupBacklog: 'Backlog',
+    groupReady: 'Ready',
+    groupActive: 'In progress',
+    groupReview: 'Review',
+    hiddenStates: 'Hidden states',
+    groupDone: 'Done',
+    detailOverview: 'Current action',
+    detailStatus: 'Status',
+    detailState: 'Stage',
+    detailControls: 'Execution settings',
+    detailAgent: 'Agent',
+    detailHeartbeat: 'Heartbeat',
+    detailLastRun: 'Last run',
+    detailSchedule: 'Next poll',
+    taskPlaceholder: 'Describe what you want to accomplish, or paste GitHub Issue / repository links',
+    taskCreate: 'Create task',
+    taskCreating: 'Creating task…',
+    taskPendingLabel: 'Creating',
+    taskStageCreating: 'Creating the LoopX task',
+    taskStageStarting: 'Task created, starting the Agent',
+    taskStarted: (id) => `Task ${id} created and started`,
+    activityTitle: 'Live activity',
+    activityStarting: 'Starting the Agent…',
+    activityRunning: (elapsed) => `Agent is working · ${elapsed} elapsed`,
+    activityCommitted: 'LoopX committed this run',
+    activityValidationPassed: 'Independent validation passed',
+    activityValidationFailed: 'Independent validation failed',
+    activityStateUpdated: 'Goal state updated',
+    activityCompleted: 'Run completed',
+    activityCompletedValidated: 'Run completed · validation passed',
+    activityFailed: 'Run failed',
+    taskGoal: 'Goal',
+    taskRepository: 'GitHub repository',
+    taskIssue: 'GitHub Issue',
+    taskIssues: (n) => `${n} Issues`,
+    taskNeedProject: 'Select the local project directory for this task first.',
+    taskNeedAgent: 'Configure the default Agent for new tasks in Settings first.',
+    taskCreated: (id) => `Task ${id} created`,
+    taskRepoMismatch: (expected, actual) => `The link targets ${expected}, but the current project is ${actual}. Select the matching local checkout.`,
+    taskMultipleRepos: 'One task can bind only one local repository. Split links from different repositories into separate tasks.',
+    setDefaultAgent: 'Default Agent for new tasks',
   },
 };
 
@@ -186,7 +270,8 @@ const ERROR_BACKOFF_CAP_MIN = 30;
 const S = {
   config: {
     projectDir: null, argvPrefix: null, srcDir: '', agentByGoal: {}, monitorByGoal: {},
-    host: 'codex-cli', codexBin: '', hostCommandJson: '', timeoutSeconds: 120,
+    host: 'codex-cli', codexBin: '', hostCommandJson: '', validationCommandJson: '',
+    defaultAgentId: '', timeoutSeconds: 120,
   },
   detect: null,
   goals: new Map(), // goalId -> G
@@ -194,12 +279,16 @@ const S = {
   countdownTimer: null,
   paused: false,
   renderPending: false,
+  activeGoalId: null,
+  intakeDraft: null,
+  archiveOpen: new Set(),
   logs: [],
 };
 
 function newGoalState(goalId, info) {
   return {
     goalId,
+    objective: info.objective || null,
     agents: info.agents || [],
     agentId: S.config.agentByGoal[goalId] || (info.agents && info.agents[0]) || '',
     state: info.state || null,
@@ -220,6 +309,8 @@ function newGoalState(goalId, info) {
     runStartedAt: 0,
     lastRun: null,       // { exitCode, durationMs, status, ok, cancelled }
     last: null,          // normalized shouldRun result
+    activityLines: [],
+    currentActivity: '',
   };
 }
 
@@ -240,8 +331,6 @@ function log(msg, isErr = false) {
   while (body.children.length > 500) body.removeChild(body.firstChild);
   body.scrollTop = body.scrollHeight;
   document.getElementById('log-count').textContent = String(S.logs.length);
-  // Errors must be visible even though the panel boots collapsed.
-  if (isErr) document.getElementById('log-panel').classList.remove('collapsed');
 }
 
 // ── config persistence ────────────────────────────────────
@@ -254,6 +343,9 @@ async function loadConfig() {
   // have (run-once defaults to generic-cli and then hard-requires an adapter).
   if (S.config.host !== 'codex-cli' && S.config.host !== 'generic-cli') {
     S.config.host = 'codex-cli';
+  }
+  if (!S.config.defaultAgentId) {
+    S.config.defaultAgentId = Object.values(S.config.agentByGoal || {}).find(Boolean) || '';
   }
 }
 async function saveConfig() {
@@ -413,20 +505,31 @@ function isGated(g) {
   return /gate|user_action|operator/.test(s);
 }
 
-// Symphony-style board: blocked-on-human first, then most actionable.
-const GROUP_ORDER = ['gated', 'run', 'wait', 'paused', 'error'];
-// The first three columns are the product ("what state, what needs me") and
-// stay visible even when empty; paused/error appear only with members.
-const ALWAYS_VISIBLE_COLUMNS = new Set(['gated', 'run', 'wait']);
+// The board mirrors an issue tracker: active workflow stays in the main four
+// columns while terminal and exceptional states remain reachable in a quiet
+// side rail.
+const PRIMARY_GROUPS = ['backlog', 'ready', 'active', 'review'];
+const ARCHIVE_GROUPS = ['done', 'paused', 'error'];
+const GROUP_I18N_KEY = {
+  backlog: 'groupBacklog', ready: 'groupReady', active: 'groupActive', review: 'groupReview',
+  done: 'groupDone', paused: 'groupPaused', error: 'groupError',
+};
+
+function isTerminal(g) {
+  const state = String(g.last?.state || g.state || '').toLowerCase();
+  return /(^|_)(terminal|completed|complete|done|cancelled|canceled|duplicate|merged|closed)(_|$)/.test(state)
+    || state.includes('no_followup');
+}
+
 function goalGroup(g) {
-  if (isGated(g)) return 'gated'; // gated outranks error: the human unlock is the story
+  if (g.running) return 'active';
+  if (isTerminal(g)) return 'done';
   if (g.errorCount > 0) return 'error';
   if (g.stopped) return 'paused';
-  if (g.last?.shouldRun === true) return 'run';
-  return 'wait';
+  if (isGated(g)) return 'review';
+  if (g.last?.shouldRun === true) return 'ready';
+  return 'backlog';
 }
-const GROUP_I18N_KEY = { gated: 'groupGated', run: 'groupRun', wait: 'groupWait', paused: 'groupPaused', error: 'groupError' };
-const GROUP_HINT_KEY = { gated: 'groupGatedHint', run: 'groupRunHint', wait: 'groupWaitHint', paused: 'groupPausedHint', error: 'groupErrorHint' };
 
 function fmtCountdown(ms) {
   if (ms <= 0) return '0:00';
@@ -462,16 +565,101 @@ function showRawJson(g) {
 }
 
 function renderGoal(_g) {
-  // Group membership can change with every poll result; renderAllGoals is
-  // fingerprint-throttled so unchanged results cost nothing.
   renderAllGoals();
 }
 
-function buildGoalCard(g) {
-  const group = goalGroup(g);
+function shortScheduleText(g) {
+  if (g.polling) return t('hbChecking');
+  if (g.errorCount > 0) return t('retryIn', g.errorCount, fmtCountdown(g.nextDueAt - Date.now()));
+  if (g.stopped) return t('resume');
+  if (g.monitoring) return t('nextPoll', fmtCountdown(g.nextDueAt - Date.now()));
+  return t('presenceIdle');
+}
+
+function goalNarration(g) {
+  return g.objective || g.last?.recommendedAction || g.last?.reason || g.lastError
+    || g.last?.state || g.state || g.goalId;
+}
+
+function activityText(line) {
+  const text = String(line || '')
+    .replace(/^\s*(?:\[[^\]]+\]\s*)+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 150 ? `${text.slice(0, 147)}...` : text;
+}
+
+function activityLineElement(entry) {
+  const row = document.createElement('div');
+  row.className = 'activity-stream__line' + (entry.isErr ? ' activity-stream__line--err' : '');
+  const time = document.createElement('span');
+  time.className = 'activity-stream__time';
+  time.textContent = entry.time;
+  const text = document.createElement('span');
+  text.textContent = entry.line;
+  row.append(time, text);
+  return row;
+}
+
+function recordGoalActivity(g, line, isErr = false) {
+  const summary = activityText(line);
+  if (!summary) return;
+  if (!Array.isArray(g.activityLines)) g.activityLines = [];
+  if (typeof g.currentActivity !== 'string') g.currentActivity = '';
+  const entry = { time: new Date().toTimeString().slice(0, 8), line: summary, isErr };
+  g.activityLines.push(entry);
+  if (g.activityLines.length > 240) g.activityLines.splice(0, g.activityLines.length - 240);
+  g.currentActivity = summary;
+
+  const cardText = document.querySelector(`.goal__activity-text[data-goal="${CSS.escape(g.goalId)}"]`);
+  if (cardText) cardText.textContent = summary;
+
+  const stream = document.querySelector(`.activity-stream[data-goal="${CSS.escape(g.goalId)}"]`);
+  if (stream) {
+    const followTail = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 32;
+    stream.appendChild(activityLineElement(entry));
+    while (stream.children.length > 240) stream.removeChild(stream.firstChild);
+    if (followTail) stream.scrollTop = stream.scrollHeight;
+  } else {
+    const dlg = document.getElementById('dlg-goal');
+    if (dlg.open && S.activeGoalId === g.goalId) renderGoalDetails(g);
+  }
+}
+
+function buildIntakeCard(draft) {
   const el = document.createElement('div');
-  el.className = 'goal';
+  el.className = 'goal goal--pending';
+  const head = document.createElement('div');
+  head.className = 'goal__head';
+  const dot = document.createElement('span');
+  dot.className = 'dot dot--ready';
+  const id = document.createElement('span');
+  id.className = 'goal__id';
+  id.textContent = t('taskPendingLabel');
+  head.append(dot, id);
+  const narration = document.createElement('div');
+  narration.className = 'goal__reason';
+  narration.textContent = draft.objective;
+  const activity = document.createElement('div');
+  activity.className = 'goal__activity goal__activity--live';
+  const pulse = document.createElement('span');
+  pulse.className = 'goal__activity-dot';
+  const text = document.createElement('span');
+  text.className = 'goal__activity-text';
+  text.textContent = draft.stage;
+  activity.append(pulse, text);
+  el.append(head, narration, activity);
+  return el;
+}
+
+function buildGoalCard(g, compact = false) {
+  const group = goalGroup(g);
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'goal' + (compact ? ' goal--terminal' : '');
   el.id = `goal-${g.goalId}`;
+  el.setAttribute('aria-label', g.goalId);
+  el.onclick = () => openGoalDetails(g);
 
   const head = document.createElement('div');
   head.className = 'goal__head';
@@ -482,81 +670,204 @@ function buildGoalCard(g) {
   id.className = 'goal__id';
   id.textContent = g.goalId;
   head.appendChild(id);
-
-  const spacer = document.createElement('span');
-  spacer.className = 'goal__spacer';
-  head.appendChild(spacer);
-
-  const toggle = document.createElement('label');
-  toggle.className = 'toggle';
-  toggle.title = t('monitor');
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = g.monitoring;
-  cb.onchange = () => {
-    g.monitoring = cb.checked;
-    S.config.monitorByGoal[g.goalId] = cb.checked;
-    saveConfig();
-    if (cb.checked) pollNow(g);
-    else rearmTimer();
-    renderGoal(g);
-  };
-  toggle.appendChild(cb);
-  toggle.appendChild(document.createTextNode(t('monitor')));
-  head.appendChild(toggle);
   el.appendChild(head);
 
-  // Narration first (what to do / why); the raw payload stays behind JSON.
-  const narration = g.last?.recommendedAction || g.last?.reason || g.lastError;
-  if (narration) {
-    const line = document.createElement('div');
-    line.className = 'goal__reason' + (g.lastError ? ' goal__reason--err' : '');
-    line.textContent = narration;
-    if (g.last?.recommendedAction && g.last?.reason) line.title = g.last.reason;
-    el.appendChild(line);
+  const narration = document.createElement('div');
+  narration.className = 'goal__reason' + (g.lastError ? ' goal__reason--err' : '');
+  narration.textContent = goalNarration(g);
+  if (g.last?.recommendedAction && g.last?.reason) narration.title = g.last.reason;
+  el.appendChild(narration);
+
+  if (g.running || g.currentActivity) {
+    const activity = document.createElement('div');
+    activity.className = 'goal__activity' + (g.running ? ' goal__activity--live' : '');
+    const pulse = document.createElement('span');
+    pulse.className = 'goal__activity-dot';
+    const text = document.createElement('span');
+    text.className = 'goal__activity-text';
+    text.dataset.goal = g.goalId;
+    text.textContent = g.currentActivity || t('activityStarting');
+    activity.append(pulse, text);
+    el.appendChild(activity);
   }
 
   const meta = document.createElement('div');
   meta.className = 'goal__meta';
-  const stateText = g.last?.state ?? g.state;
-  if (stateText) {
-    const st = document.createElement('span');
-    st.className = 'goal__state';
-    const waiting = g.last && g.last.ok !== false ? g.last.waitingOn : g.waitingOn;
-    st.textContent = waiting ? `${stateText} · ${t('waitingOn', waiting)}` : stateText;
-    meta.appendChild(st);
+  if (g.agentId) {
+    const agent = document.createElement('span');
+    agent.textContent = g.agentId;
+    meta.appendChild(agent);
   }
-  if (g.monitoring && !g.stopped) {
-    const cd = document.createElement('span');
-    cd.className = 'countdown' + (g.errorCount > 0 ? ' countdown--err' : '');
-    cd.dataset.goal = g.goalId;
-    cd.textContent = goalMetaText(g);
-    meta.appendChild(cd);
+  if (meta.children.length) el.appendChild(meta);
+  return el;
+}
+
+function appendDetailRow(grid, key, value, className = '') {
+  const k = document.createElement('div');
+  k.className = 'detail__key';
+  k.textContent = key;
+  const v = document.createElement('div');
+  v.className = `detail__value ${className}`.trim();
+  v.textContent = value || '—';
+  grid.append(k, v);
+}
+
+async function requestTurnPlan(g, button) {
+  if (!g.agentId) { log(`[${g.goalId}] ${t('needAgent')}`, true); return; }
+  button.disabled = true;
+  try {
+    const res = await app.call('loopx.turnPlan', {
+      argvPrefix: S.config.argvPrefix, projectDir: S.config.projectDir,
+      goalId: g.goalId, agentId: g.agentId, host: S.config.host,
+    });
+    log(`[${g.goalId}] turn plan → ${res.route ?? JSON.stringify(res.raw)?.slice(0, 200)}`);
+  } catch (err) {
+    log(`[${g.goalId}] turn plan error: ${err.message || err}`, true);
+  } finally { button.disabled = false; }
+}
+
+async function cancelGoalRun(g, button) {
+  button.disabled = true;
+  try {
+    const res = await app.call('loopx.cancelRunOnce', { goalId: g.goalId });
+    if (!res.ok) log(`[${g.goalId}] cancel: ${res.error}`, true);
+  } catch (err) {
+    log(`[${g.goalId}] cancel error: ${err.message || err}`, true);
+    button.disabled = false;
   }
-  if (g.unchangedCount > 0) {
-    const un = document.createElement('span');
-    un.textContent = t('unchangedTimes', g.unchangedCount);
-    meta.appendChild(un);
+}
+
+function renderGoalDetails(g) {
+  const dlg = document.getElementById('dlg-goal');
+  if (!dlg.open || S.activeGoalId !== g.goalId) return;
+  if (!Array.isArray(g.activityLines)) g.activityLines = [];
+  if (typeof g.currentActivity !== 'string') g.currentActivity = '';
+  const active = document.activeElement;
+  if (active && dlg.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'SELECT')) return;
+
+  const group = goalGroup(g);
+  document.getElementById('goal-detail-kicker').textContent = t(GROUP_I18N_KEY[group]);
+  document.getElementById('goal-detail-title').textContent = g.goalId;
+  const body = document.getElementById('goal-detail-body');
+  body.replaceChildren();
+
+  const overview = document.createElement('section');
+  overview.className = 'detail__section';
+  const overviewLabel = document.createElement('div');
+  overviewLabel.className = 'detail__label';
+  overviewLabel.textContent = t('detailOverview');
+  const action = document.createElement('div');
+  action.className = 'detail__action' + (g.lastError ? ' goal__reason--err' : '');
+  action.textContent = goalNarration(g);
+  overview.append(overviewLabel, action);
+  const detailReason = g.objective
+    ? (g.last?.recommendedAction || g.last?.reason)
+    : (g.last?.recommendedAction && g.last?.reason ? g.last.reason : null);
+  if (detailReason && detailReason !== goalNarration(g)) {
+    const reason = document.createElement('div');
+    reason.className = 'detail__reason';
+    reason.textContent = detailReason;
+    overview.appendChild(reason);
   }
-  if (g.running) {
-    const run = document.createElement('span');
-    run.className = 'badge badge--run';
-    run.dataset.runGoal = g.goalId;
-    run.textContent = t('running', fmtCountdown(Date.now() - g.runStartedAt));
-    meta.appendChild(run);
-  } else if (g.lastRun) {
-    const lr = document.createElement('span');
-    lr.textContent = g.lastRun.cancelled
+  body.appendChild(overview);
+
+  if (g.running || g.activityLines.length) {
+    const activity = document.createElement('section');
+    activity.className = 'detail__section';
+    const activityLabel = document.createElement('div');
+    activityLabel.className = 'detail__label';
+    activityLabel.textContent = t('activityTitle');
+    const stream = document.createElement('div');
+    stream.className = 'activity-stream';
+    stream.dataset.goal = g.goalId;
+    for (const entry of g.activityLines) stream.appendChild(activityLineElement(entry));
+    activity.append(activityLabel, stream);
+    body.appendChild(activity);
+    requestAnimationFrame(() => { stream.scrollTop = stream.scrollHeight; });
+  }
+
+  const status = document.createElement('section');
+  status.className = 'detail__section';
+  const statusLabel = document.createElement('div');
+  statusLabel.className = 'detail__label';
+  statusLabel.textContent = t('detailStatus');
+  const grid = document.createElement('div');
+  grid.className = 'detail__grid';
+  const waiting = g.last && g.last.ok !== false ? g.last.waitingOn : g.waitingOn;
+  appendDetailRow(grid, t('detailState'), waiting ? `${g.last?.state ?? g.state ?? '—'} · ${t('waitingOn', waiting)}` : (g.last?.state ?? g.state));
+  appendDetailRow(grid, t('detailAgent'), g.agentId);
+  appendDetailRow(grid, t('detailHeartbeat'), g.monitoring ? t('presenceLive') : t('presenceIdle'));
+  appendDetailRow(grid, t('detailSchedule'), goalMetaText(g), g.errorCount ? 'countdown--err' : '');
+  if (g.lastRun) {
+    appendDetailRow(grid, t('detailLastRun'), g.lastRun.cancelled
       ? t('lastRunCancelled')
-      : t('lastRun', g.lastRun.exitCode, Math.round((g.lastRun.durationMs || 0) / 1000));
-    if (!g.lastRun.ok && !g.lastRun.cancelled) lr.className = 'goal__lastrun--err';
-    meta.appendChild(lr);
+      : t('lastRun', g.lastRun.exitCode, Math.round((g.lastRun.durationMs || 0) / 1000)),
+    !g.lastRun.ok && !g.lastRun.cancelled ? 'goal__lastrun--err' : '');
   }
-  el.appendChild(meta);
+  status.append(statusLabel, grid);
+  body.appendChild(status);
+
+  const controls = document.createElement('section');
+  controls.className = 'detail__section detail__controls';
+  const controlsLabel = document.createElement('div');
+  controlsLabel.className = 'detail__label';
+  controlsLabel.textContent = t('detailControls');
+  controls.appendChild(controlsLabel);
+  const agentField = document.createElement('label');
+  agentField.className = 'field';
+  const agentLabel = document.createElement('span');
+  agentLabel.textContent = t('agent');
+  agentField.appendChild(agentLabel);
+  if (g.agents.length) {
+    const select = document.createElement('select');
+    const options = g.agentId && !g.agents.includes(g.agentId) ? [...g.agents, g.agentId] : g.agents;
+    for (const agentId of options) {
+      const option = document.createElement('option');
+      option.value = agentId;
+      option.textContent = agentId;
+      option.selected = agentId === g.agentId;
+      select.appendChild(option);
+    }
+    select.onchange = () => {
+      g.agentId = select.value;
+      S.config.agentByGoal[g.goalId] = g.agentId;
+      saveConfig();
+      renderAllGoals(true);
+    };
+    agentField.appendChild(select);
+  } else {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = t('agentFree');
+    input.value = g.agentId;
+    input.onchange = () => {
+      g.agentId = input.value.trim();
+      S.config.agentByGoal[g.goalId] = g.agentId;
+      saveConfig();
+      renderAllGoals(true);
+    };
+    agentField.appendChild(input);
+  }
+  controls.appendChild(agentField);
+  const monitor = document.createElement('label');
+  monitor.className = 'detail__toggle';
+  monitor.appendChild(document.createTextNode(t('monitor')));
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = g.monitoring;
+  checkbox.onchange = () => {
+    g.monitoring = checkbox.checked;
+    S.config.monitorByGoal[g.goalId] = checkbox.checked;
+    saveConfig();
+    if (checkbox.checked) pollNow(g); else rearmTimer();
+    renderAllGoals(true);
+  };
+  monitor.appendChild(checkbox);
+  controls.appendChild(monitor);
+  body.appendChild(controls);
 
   const actions = document.createElement('div');
-  actions.className = 'goal__actions';
-
+  actions.className = 'detail__actions';
   if (g.stopped) {
     const resume = document.createElement('button');
     resume.type = 'button';
@@ -565,110 +876,52 @@ function buildGoalCard(g) {
     resume.onclick = () => pollNow(g);
     actions.appendChild(resume);
   }
+  const run = document.createElement('button');
+  run.type = 'button';
+  run.className = g.running ? 'btn btn--danger' : 'btn btn--primary';
+  run.textContent = g.running ? t('cancelRun') : t('runOnce');
+  run.onclick = () => g.running ? cancelGoalRun(g, run) : confirmRunOnce(g);
+  actions.appendChild(run);
+  const plan = document.createElement('button');
+  plan.type = 'button';
+  plan.className = 'btn';
+  plan.textContent = t('plan');
+  plan.onclick = () => requestTurnPlan(g, plan);
+  actions.appendChild(plan);
+  const raw = document.createElement('button');
+  raw.type = 'button';
+  raw.className = 'btn';
+  raw.textContent = t('raw');
+  raw.disabled = !g.last;
+  raw.onclick = () => showRawJson(g);
+  actions.appendChild(raw);
+  body.appendChild(actions);
+}
 
-  if (g.agents.length > 0) {
-    const sel = document.createElement('select');
-    sel.title = t('agent');
-    // A persisted agentId can fall out of the registered list; keep it as an
-    // explicit option so the display matches what CLI calls actually use.
-    const options = g.agentId && !g.agents.includes(g.agentId)
-      ? [...g.agents, g.agentId]
-      : g.agents;
-    for (const a of options) {
-      const opt = document.createElement('option');
-      opt.value = a;
-      opt.textContent = a;
-      if (a === g.agentId) opt.selected = true;
-      sel.appendChild(opt);
-    }
-    sel.onchange = () => {
-      g.agentId = sel.value;
-      S.config.agentByGoal[g.goalId] = sel.value;
-      saveConfig();
-    };
-    actions.appendChild(sel);
-  } else {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = t('agentFree');
-    input.title = t('agent');
-    input.value = g.agentId;
-    input.onchange = () => {
-      g.agentId = input.value.trim();
-      S.config.agentByGoal[g.goalId] = g.agentId;
-      saveConfig();
-    };
-    actions.appendChild(input);
-  }
-
-  if (g.running) {
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn';
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = t('cancelRun');
-    cancelBtn.onclick = async () => {
-      cancelBtn.disabled = true;
-      try {
-        const res = await app.call('loopx.cancelRunOnce', { goalId: g.goalId });
-        if (!res.ok) log(`[${g.goalId}] cancel: ${res.error}`, true);
-      } catch (err) {
-        log(`[${g.goalId}] cancel error: ${err.message || err}`, true);
-      }
-    };
-    actions.appendChild(cancelBtn);
-  } else {
-    const runBtn = document.createElement('button');
-    runBtn.className = 'btn' + (g.last?.shouldRun === true ? ' btn--primary' : '');
-    runBtn.type = 'button';
-    runBtn.textContent = t('runOnce');
-    runBtn.onclick = () => confirmRunOnce(g);
-    actions.appendChild(runBtn);
-  }
-
-  const planBtn = document.createElement('button');
-  planBtn.className = 'btn';
-  planBtn.type = 'button';
-  planBtn.textContent = t('plan');
-  planBtn.onclick = async () => {
-    if (!g.agentId) { log(`[${g.goalId}] ${t('needAgent')}`, true); return; }
-    planBtn.disabled = true;
-    try {
-      const res = await app.call('loopx.turnPlan', {
-        argvPrefix: S.config.argvPrefix, projectDir: S.config.projectDir,
-        goalId: g.goalId, agentId: g.agentId, host: S.config.host,
-      });
-      log(`[${g.goalId}] turn plan → ${res.route ?? JSON.stringify(res.raw)?.slice(0, 200)}`);
-    } catch (err) {
-      log(`[${g.goalId}] turn plan error: ${err.message || err}`, true);
-    } finally { planBtn.disabled = false; }
-  };
-  actions.appendChild(planBtn);
-
-  const rawBtn = document.createElement('button');
-  rawBtn.className = 'btn';
-  rawBtn.type = 'button';
-  rawBtn.textContent = t('raw');
-  rawBtn.disabled = !g.last;
-  rawBtn.onclick = () => showRawJson(g);
-  actions.appendChild(rawBtn);
-
-  el.appendChild(actions);
-  return el;
+function openGoalDetails(g) {
+  S.activeGoalId = g.goalId;
+  const dlg = document.getElementById('dlg-goal');
+  if (!dlg.open) dlg.showModal();
+  renderGoalDetails(g);
 }
 
 // Fingerprint of everything the goal list displays except per-second
 // countdown text (the countdown loop patches those spans in place).
 function displayFingerprint() {
-  const parts = [String(S.goals.size), app.locale];
+  const parts = [
+    String(S.goals.size), app.locale,
+    S.intakeDraft ? `${S.intakeDraft.objective}|${S.intakeDraft.stage}` : '',
+  ];
   for (const g of S.goals.values()) {
     parts.push([
       g.goalId, goalGroup(g), g.polling, g.running, g.stopped, g.monitoring,
       g.errorCount, g.unchangedCount, g.intervalMin.toFixed(2),
       g.agents.join(','), g.agentId,
+      g.objective ?? '',
       g.last ? decisionKey(g.last) : '',
       g.last?.reason ?? '', g.last?.recommendedAction ?? '',
       g.last?.state ?? g.state ?? '', g.last?.waitingOn ?? g.waitingOn ?? '',
-      g.lastError ?? '',
+      g.lastError ?? '', g.currentActivity ?? '',
       g.lastRun ? `${g.lastRun.exitCode}|${g.lastRun.cancelled}|${g.lastRun.durationMs}` : '',
     ].join(''));
   }
@@ -697,16 +950,17 @@ function renderAllGoals(force = false) {
   for (const child of [...list.children]) {
     if (child.id !== 'goals-empty') child.remove();
   }
-  empty.hidden = S.goals.size > 0;
-  if (S.goals.size === 0) {
+  const hasVisibleTasks = S.goals.size > 0 || !!S.intakeDraft;
+  empty.hidden = hasVisibleTasks;
+  if (!hasVisibleTasks) {
     updateHeaderStatus();
     return;
   }
-  const buckets = new Map(GROUP_ORDER.map((k) => [k, []]));
+  const buckets = new Map([...PRIMARY_GROUPS, ...ARCHIVE_GROUPS].map((k) => [k, []]));
   for (const g of S.goals.values()) buckets.get(goalGroup(g)).push(g);
-  for (const key of GROUP_ORDER) {
+  for (const key of PRIMARY_GROUPS) {
     const goals = buckets.get(key);
-    if (goals.length === 0 && !ALWAYS_VISIBLE_COLUMNS.has(key)) continue;
+    const pendingCount = key === 'ready' && S.intakeDraft ? 1 : 0;
     const col = document.createElement('div');
     col.className = `col col--${key}`;
 
@@ -725,33 +979,69 @@ function renderAllGoals(force = false) {
     head.appendChild(count);
     col.appendChild(head);
 
-    const hint = document.createElement('div');
-    hint.className = 'col__hint';
-    hint.textContent = t(GROUP_HINT_KEY[key]);
-    col.appendChild(hint);
-
     const body = document.createElement('div');
     body.className = 'col__body';
-    if (goals.length === 0) {
+    if (goals.length === 0 && pendingCount === 0) {
       const none = document.createElement('div');
       none.className = 'col__empty';
       none.textContent = t('colEmpty');
       body.appendChild(none);
     }
+    if (key === 'ready' && S.intakeDraft) body.appendChild(buildIntakeCard(S.intakeDraft));
     for (const g of goals) body.appendChild(buildGoalCard(g));
     col.appendChild(body);
     list.appendChild(col);
   }
+  const archive = document.createElement('aside');
+  archive.className = 'archive';
+  const archiveHead = document.createElement('div');
+  archiveHead.className = 'archive__head';
+  const archiveTitle = document.createElement('span');
+  archiveTitle.textContent = t('hiddenStates');
+  const archiveTotal = document.createElement('span');
+  archiveTotal.className = 'archive__count';
+  archiveTotal.textContent = String(ARCHIVE_GROUPS.reduce((sum, key) => sum + buckets.get(key).length, 0));
+  archiveHead.append(archiveTitle, archiveTotal);
+  archive.appendChild(archiveHead);
+  const archiveBody = document.createElement('div');
+  archiveBody.className = 'archive__body';
+  for (const key of ARCHIVE_GROUPS) {
+    const goals = buckets.get(key);
+    if (goals.length === 0) continue;
+    const group = document.createElement('section');
+    group.className = 'archive__group' + (S.archiveOpen.has(key) ? ' is-open' : '');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'archive__row';
+    const chevron = document.createElement('span');
+    chevron.className = 'archive__chevron';
+    chevron.textContent = '⌄';
+    const dot = document.createElement('span');
+    dot.className = `dot dot--${key}`;
+    const label = document.createElement('span');
+    label.textContent = t(GROUP_I18N_KEY[key]);
+    const count = document.createElement('span');
+    count.className = 'archive__count';
+    count.textContent = String(goals.length);
+    row.append(chevron, dot, label, count);
+    row.onclick = () => {
+      if (S.archiveOpen.has(key)) S.archiveOpen.delete(key); else S.archiveOpen.add(key);
+      group.classList.toggle('is-open', S.archiveOpen.has(key));
+    };
+    const cards = document.createElement('div');
+    cards.className = 'archive__cards';
+    for (const g of goals) cards.appendChild(buildGoalCard(g, true));
+    group.append(row, cards);
+    archiveBody.appendChild(group);
+  }
+  archive.appendChild(archiveBody);
+  list.appendChild(archive);
+  if (S.activeGoalId) {
+    const activeGoal = S.goals.get(S.activeGoalId);
+    if (activeGoal) renderGoalDetails(activeGoal);
+  }
   updateHeaderStatus();
 }
-
-document.getElementById('goal-list').addEventListener('focusout', () => {
-  if (!S.renderPending) return;
-  S.renderPending = false;
-  // Not setTimeout(0): a focusout fired by mousedown on a card button would
-  // rebuild the DOM before mouseup, swallowing that click.
-  setTimeout(() => renderAllGoals(), 250);
-});
 
 // Header presence badge + global next-tick countdown: the single bit that
 // matters most for a console that owns the timer — is it armed right now?
@@ -788,12 +1078,8 @@ function startCountdownLoop() {
   if (S.countdownTimer) clearInterval(S.countdownTimer);
   S.countdownTimer = setInterval(() => {
     for (const g of S.goals.values()) {
-      const cd = document.querySelector(`.countdown[data-goal="${CSS.escape(g.goalId)}"]`);
-      if (cd && !g.polling) cd.textContent = goalMetaText(g);
-      if (g.running) {
-        const run = document.querySelector(`[data-run-goal="${CSS.escape(g.goalId)}"]`);
-        if (run) run.textContent = t('running', fmtCountdown(Date.now() - g.runStartedAt));
-      }
+      const countdowns = document.querySelectorAll(`.countdown[data-goal="${CSS.escape(g.goalId)}"]`);
+      for (const cd of countdowns) cd.textContent = shortScheduleText(g);
     }
     updateHeaderStatus();
   }, 1000);
@@ -819,6 +1105,7 @@ async function confirmRunOnce(g) {
       host: S.config.host,
       codexBin: S.config.codexBin || null,
       hostCommandJson: S.config.hostCommandJson || null,
+      validationCommandJson: S.config.validationCommandJson || null,
       timeoutSeconds: S.config.timeoutSeconds,
     });
   } catch (err) {
@@ -833,7 +1120,13 @@ async function confirmRunOnce(g) {
   dlg.returnValue = 'cancel';
   dlg.onclose = () => {
     if (dlg.returnValue !== 'run') return;
-    executeRunOnce(g);
+    executeRunOnce(g).catch((err) => {
+      const message = String(err?.message || err);
+      log(`[${g.goalId}] run-once error: ${message}`, true);
+      g.running = false;
+      recordGoalActivity(g, message, true);
+      renderGoal(g);
+    });
   };
   dlg.showModal();
 }
@@ -841,6 +1134,9 @@ async function confirmRunOnce(g) {
 async function executeRunOnce(g) {
   g.running = true;
   g.runStartedAt = Date.now();
+  g.activityLines = [];
+  g.currentActivity = '';
+  recordGoalActivity(g, t('activityStarting'));
   renderGoal(g);
   log(`[${g.goalId}] run-once started (agent=${g.agentId})`);
   try {
@@ -856,16 +1152,26 @@ async function executeRunOnce(g) {
       host: S.config.host,
       codexBin: S.config.codexBin || null,
       hostCommandJson: S.config.hostCommandJson || null,
+      validationCommandJson: S.config.validationCommandJson || null,
       timeoutSeconds: S.config.timeoutSeconds,
     });
   } catch (err) {
     log(`[${g.goalId}] run-once error: ${err.message || err}`, true);
     g.running = false;
+    recordGoalActivity(g, String(err.message || err), true);
     renderGoal(g);
   }
 }
 
-app.on('worker:runOnce:log', ({ goalId, line }) => log(`[${goalId}] ${line}`));
+app.on('worker:runOnce:log', ({ goalId, line }) => {
+  const g = S.goals.get(goalId);
+  if (g) recordGoalActivity(g, line);
+  log(`[${goalId}] ${line}`);
+});
+app.on('worker:runOnce:tick', ({ goalId, elapsedMs }) => {
+  const g = S.goals.get(goalId);
+  if (g) recordGoalActivity(g, t('activityRunning', fmtCountdown(elapsedMs)));
+});
 app.on('worker:runOnce:done', (d) => {
   const g = S.goals.get(d.goalId);
   if (g) {
@@ -873,7 +1179,16 @@ app.on('worker:runOnce:done', (d) => {
     g.lastRun = {
       exitCode: d.exitCode, durationMs: d.durationMs || 0,
       status: d.status, ok: d.ok, cancelled: !!d.cancelled,
+      raw: d.raw ?? null,
     };
+    if (d.raw?.status === 'committed') recordGoalActivity(g, t('activityCommitted'));
+    if (d.raw?.validation?.status === 'passed') recordGoalActivity(g, t('activityValidationPassed'));
+    else if (d.raw?.validation?.status === 'failed') recordGoalActivity(g, t('activityValidationFailed'), true);
+    if (d.raw?.effects?.state_written === true) recordGoalActivity(g, t('activityStateUpdated'));
+    const completedLabel = d.raw?.validation?.status === 'passed'
+      ? t('activityCompletedValidated')
+      : t('activityCompleted');
+    recordGoalActivity(g, d.ok ? completedLabel : (d.error || t('activityFailed')), !d.ok);
   }
   if (d.cancelled) log(`[${d.goalId}] ${t('runCancelled')}`);
   else if (d.error) log(`[${d.goalId}] run-once error: ${d.error}`, true);
@@ -939,6 +1254,7 @@ async function refreshGoals() {
         existing.state = info.state ?? existing.state;
         existing.waitingOn = info.waitingOn ?? existing.waitingOn;
         existing.agents = info.agents?.length ? info.agents : existing.agents;
+        existing.objective = info.objective ?? existing.objective;
       } else {
         S.goals.set(info.goalId, newGoalState(info.goalId, info));
       }
@@ -992,6 +1308,8 @@ document.getElementById('btn-settings').addEventListener('click', () => {
   document.getElementById('set-host').value = S.config.host;
   document.getElementById('set-codexbin').value = S.config.codexBin || '';
   document.getElementById('set-hostjson').value = S.config.hostCommandJson || '';
+  document.getElementById('set-validatorjson').value = S.config.validationCommandJson || '';
+  document.getElementById('set-default-agent').value = S.config.defaultAgentId || '';
   document.getElementById('set-timeout').value = String(S.config.timeoutSeconds);
   syncHostFields();
   const dlg = document.getElementById('dlg-settings');
@@ -1013,6 +1331,8 @@ document.getElementById('btn-settings').addEventListener('click', () => {
     S.config.host = document.getElementById('set-host').value === 'generic-cli' ? 'generic-cli' : 'codex-cli';
     S.config.codexBin = document.getElementById('set-codexbin').value.trim();
     S.config.hostCommandJson = document.getElementById('set-hostjson').value.trim();
+    S.config.validationCommandJson = document.getElementById('set-validatorjson').value.trim();
+    S.config.defaultAgentId = document.getElementById('set-default-agent').value.trim();
     S.config.timeoutSeconds = Math.min(240, Math.max(10, Number(document.getElementById('set-timeout').value) || 120));
     await saveConfig();
     if (await detect()) refreshGoals();
@@ -1028,8 +1348,17 @@ function syncHostFields() {
 }
 document.getElementById('set-host').addEventListener('change', syncHostFields);
 
-document.getElementById('btn-toggle-log').addEventListener('click', () => {
-  document.getElementById('log-panel').classList.toggle('collapsed');
+document.getElementById('btn-logs').addEventListener('click', () => {
+  document.getElementById('dlg-logs').showModal();
+});
+document.getElementById('btn-close-logs').addEventListener('click', () => {
+  document.getElementById('dlg-logs').close();
+});
+document.getElementById('btn-close-goal').addEventListener('click', () => {
+  document.getElementById('dlg-goal').close();
+});
+document.getElementById('dlg-goal').addEventListener('close', () => {
+  S.activeGoalId = null;
 });
 
 document.getElementById('btn-copy-raw').addEventListener('click', async (e) => {
@@ -1044,117 +1373,132 @@ document.getElementById('btn-copy-raw').addEventListener('click', async (e) => {
   }
 });
 
-// ── issue intake (paste a GitHub issue URL → todos into a goal) ──
-function openIssueDialog() {
-  const dlg = document.getElementById('dlg-issue');
-  const goalSel = document.getElementById('issue-goal');
-  goalSel.replaceChildren();
-  for (const id of S.goals.keys()) {
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = id;
-    goalSel.appendChild(opt);
-  }
-  const noGoals = S.goals.size === 0;
-  document.getElementById('issue-nogoals').hidden = !noGoals;
-  goalSel.disabled = noGoals;
-  const box = document.getElementById('issue-preview');
-  box.hidden = true;
-  box.replaceChildren();
-  const writeBtn = document.getElementById('btn-issue-write');
-  writeBtn.disabled = true;
-  writeBtn.textContent = t('issueWrite', 0);
-  dlg.returnValue = 'cancel';
-  dlg.showModal();
-}
-
-function renderIssuePreview(res) {
-  const box = document.getElementById('issue-preview');
-  box.replaceChildren();
-  box.hidden = false;
-  const sig = res.issueSignal || {};
-  const sigLine = document.createElement('div');
-  sigLine.className = 'issue-preview__signal';
-  sigLine.textContent = [sig.repo, sig.issue_ref, sig.kind, sig.state].filter(Boolean).join(' · ')
-    + (Array.isArray(sig.labels) && sig.labels.length ? ` · ${sig.labels.join(', ')}` : '');
-  box.appendChild(sigLine);
-  const bp = res.branchPlan || {};
-  if (bp.issue_branch) {
-    const b = document.createElement('div');
-    b.className = 'issue-preview__line';
-    b.textContent = `${t('issueBranchLabel')}: ${bp.base_branch ?? '?'} → ${bp.issue_branch}`;
-    box.appendChild(b);
-  }
-  const todos = res.todosPreview || [];
-  if (todos.length) {
-    const label = document.createElement('div');
-    label.className = 'issue-preview__label';
-    label.textContent = `${t('issueTodosLabel')} · ${todos.length}`;
-    box.appendChild(label);
-    for (const td of todos) {
-      const row = document.createElement('div');
-      row.className = 'issue-preview__todo';
-      row.textContent = td.text;
-      row.title = `${td.taskClass} / ${td.actionKind ?? '-'}`;
-      box.appendChild(row);
+// ── task intake ───────────────────────────────────────────
+function taskInputKind(text) {
+  const urls = String(text || '').match(/https:\/\/github\.com\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+/gi) || [];
+  const issues = urls.filter((url) => {
+    try {
+      const segments = new URL(url.replace(/[),.;:\]}]+$/g, '')).pathname.split('/').filter(Boolean);
+      return /^(issues|pull)$/.test(segments[2] || '') && /^\d+$/.test(segments[3] || '');
+    } catch (_) {
+      return false;
     }
-  }
+  });
+  if (issues.length > 1) return t('taskIssues', issues.length);
+  if (issues.length === 1) return t('taskIssue');
+  if (urls.length) return t('taskRepository');
+  return text.trim() ? t('taskGoal') : '';
 }
 
-async function parseIssueUrl() {
-  const url = document.getElementById('issue-url').value.trim();
-  if (!url) return;
-  const parseBtn = document.getElementById('btn-issue-parse');
-  parseBtn.disabled = true;
-  parseBtn.textContent = t('issueParsing');
+function setTaskFeedback(message, mode = '') {
+  const feedback = document.getElementById('task-feedback');
+  feedback.textContent = message || '';
+  feedback.hidden = !message;
+  feedback.className = `composer__feedback${mode ? ` composer__feedback--${mode}` : ''}`;
+}
+
+function updateTaskKind() {
+  const input = document.getElementById('task-input');
+  const kind = taskInputKind(input.value);
+  const badge = document.getElementById('task-kind');
+  badge.textContent = kind;
+  badge.hidden = !kind;
+}
+
+function resolveDefaultAgent() {
+  if (S.config.defaultAgentId) return S.config.defaultAgentId;
+  for (const goal of S.goals.values()) {
+    if (goal.agentId) return goal.agentId;
+    if (goal.agents.length) return goal.agents[0];
+  }
+  return Object.values(S.config.agentByGoal || {}).find(Boolean) || '';
+}
+
+async function createTaskFromInput() {
+  const input = document.getElementById('task-input');
+  const button = document.getElementById('btn-create-task');
+  const objective = input.value.trim();
+  if (!objective) { input.focus(); return; }
+  if (!S.config.projectDir) {
+    setTaskFeedback(t('taskNeedProject'), 'error');
+    return;
+  }
+  const agentId = resolveDefaultAgent();
+  if (!agentId) {
+    setTaskFeedback(t('taskNeedAgent'), 'error');
+    return;
+  }
+
+  button.disabled = true;
+  input.disabled = true;
+  S.intakeDraft = { objective, stage: t('taskStageCreating') };
+  setTaskFeedback(t('taskCreating'));
+  renderAllGoals(true);
   try {
-    const res = await app.call('loopx.issueIntake', {
-      argvPrefix: S.config.argvPrefix, srcDir: S.config.srcDir || null,
-      projectDir: S.config.projectDir, url,
+    const result = await app.call('loopx.taskIntake', {
+      argvPrefix: S.config.argvPrefix,
+      srcDir: S.config.srcDir || null,
+      projectDir: S.config.projectDir,
+      objective,
+      agentId,
     });
-    renderIssuePreview(res);
-    const n = (res.todosPreview || []).length;
-    const writeBtn = document.getElementById('btn-issue-write');
-    writeBtn.textContent = t('issueWrite', n);
-    writeBtn.disabled = !res.ok || n === 0 || S.goals.size === 0;
-    if (res.error) log(`issue intake: ${res.error}`, true);
+    if (!result.ok) {
+      let message = result.error || 'task creation failed';
+      if (result.code === 'repository_mismatch') {
+        message = t('taskRepoMismatch', result.requestedRepo, result.projectRepo || '?');
+      } else if (result.code === 'multiple_repositories') {
+        message = t('taskMultipleRepos');
+      }
+      S.intakeDraft = null;
+      renderAllGoals(true);
+      setTaskFeedback(message, 'error');
+      log(`task intake: ${message}`, true);
+      return;
+    }
+    S.config.defaultAgentId = agentId;
+    S.config.agentByGoal[result.goalId] = agentId;
+    S.config.monitorByGoal[result.goalId] = true;
+    S.intakeDraft.stage = t('taskStageStarting');
+    renderAllGoals(true);
+    await saveConfig();
+    input.value = '';
+    updateTaskKind();
+    setTaskFeedback(t('taskStarted', result.goalId), 'ok');
+    log(`[${result.goalId}] task created (${result.intakeKind}, ${result.written.length} todos)`);
+    await refreshGoals();
+    S.intakeDraft = null;
+    const createdGoal = S.goals.get(result.goalId);
+    if (createdGoal) {
+      createdGoal.agentId = agentId;
+      renderAllGoals(true);
+      await executeRunOnce(createdGoal);
+    } else {
+      setTaskFeedback(t('taskCreated', result.goalId), 'ok');
+      renderAllGoals(true);
+    }
   } catch (err) {
-    log(`issue intake error: ${err.message || err}`, true);
+    const message = String(err.message || err);
+    S.intakeDraft = null;
+    renderAllGoals(true);
+    setTaskFeedback(message, 'error');
+    log(`task intake error: ${message}`, true);
   } finally {
-    parseBtn.disabled = false;
-    parseBtn.textContent = t('issueParse');
+    input.disabled = false;
+    button.disabled = false;
   }
 }
 
-async function writeIssueTodos() {
-  const goalId = document.getElementById('issue-goal').value;
-  const url = document.getElementById('issue-url').value.trim();
-  if (!goalId || !url) { log(t('issueNoGoals'), true); return; }
-  const writeBtn = document.getElementById('btn-issue-write');
-  writeBtn.disabled = true;
-  try {
-    const res = await app.call('loopx.issueIntake', {
-      argvPrefix: S.config.argvPrefix, srcDir: S.config.srcDir || null,
-      projectDir: S.config.projectDir, url, goalId, execute: true,
-    });
-    const written = res.written || [];
-    const okN = written.filter((w) => w.ok).length;
-    log(`[${goalId}] ${t('issueWritten', okN, written.length)}`, okN !== written.length);
-    for (const w of written.filter((x) => !x.ok)) {
-      log(`[${goalId}] todo add failed (${w.actionKind}): ${w.error}`, true);
-    }
-    document.getElementById('dlg-issue').close('done');
-    const g = S.goals.get(goalId);
-    if (g) pollNow(g); // heartbeat takes over from here
-  } catch (err) {
-    log(`issue intake error: ${err.message || err}`, true);
-    writeBtn.disabled = false;
+document.getElementById('task-input').addEventListener('input', () => {
+  updateTaskKind();
+  setTaskFeedback('');
+});
+document.getElementById('task-input').addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    createTaskFromInput();
   }
-}
-
-document.getElementById('btn-issue').addEventListener('click', openIssueDialog);
-document.getElementById('btn-issue-parse').addEventListener('click', parseIssueUrl);
-document.getElementById('btn-issue-write').addEventListener('click', writeIssueTodos);
+});
+document.getElementById('btn-create-task').addEventListener('click', createTaskFromInput);
 
 // ── i18n ──────────────────────────────────────────────────
 function applyI18n() {
@@ -1169,7 +1513,12 @@ function applyI18n() {
     const value = t(el.getAttribute('data-i18n-title'));
     if (typeof value === 'string') el.title = value;
   });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const value = t(el.getAttribute('data-i18n-placeholder'));
+    if (typeof value === 'string') el.placeholder = value;
+  });
   updateProjectLabel();
+  updateTaskKind();
 }
 
 app.onLocaleChange((locale) => {
@@ -1204,7 +1553,6 @@ window.addEventListener('beforeunload', () => {
 
 // ── boot ──────────────────────────────────────────────────
 (async function boot() {
-  document.getElementById('log-panel').classList.add('collapsed');
   await loadConfig();
   applyI18n();
   startCountdownLoop();

@@ -283,7 +283,10 @@ function turnContextArgs(host) {
 
 // Single source of truth for run-once argv: the confirmation dialog previews
 // exactly what runOnce will spawn.
-function buildRunOnceArgs({ projectDir, goalId, agentId, host, codexBin, hostCommandJson, timeoutSeconds }) {
+function buildRunOnceArgs({
+  projectDir, goalId, agentId, host, codexBin, hostCommandJson,
+  validationCommandJson, timeoutSeconds,
+}) {
   const args = [
     '--format', 'json',
     ...registryArgs(projectDir),
@@ -299,6 +302,9 @@ function buildRunOnceArgs({ projectDir, goalId, agentId, host, codexBin, hostCom
     // loopx defaults turn run-once to generic-cli anyway; make it explicit.
     args.push('--host', 'generic-cli');
     if (hostCommandJson) args.push('--host-command-json', hostCommandJson);
+  }
+  if (validationCommandJson) {
+    args.push('--validation-command-json', validationCommandJson);
   }
   // The mini-app IS the outer controller for both hosts. Without this flag,
   // run-once under codex-cli resolves scheduler_owner=agent_cli_loop and the
@@ -318,6 +324,180 @@ function validateRunOnceParams({ projectDir, goalId, agentId, host, hostCommandJ
       + 'Pick codex-cli or configure the adapter in Settings.'
     );
   }
+}
+
+function githubReferences(text) {
+  const refs = [];
+  const seen = new Set();
+  const pattern = /https:\/\/github\.com\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+/gi;
+  for (const match of String(text || '').matchAll(pattern)) {
+    const rawUrl = match[0].replace(/[),.;:\]}]+$/g, '');
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch (_) { continue; }
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length < 2) continue;
+    const owner = segments[0];
+    const repoName = segments[1].replace(/\.git$/i, '');
+    if (!owner || !repoName) continue;
+    const type = segments[2];
+    const number = /^(issues|pull)$/.test(type || '') && /^\d+$/.test(segments[3] || '')
+      ? Number(segments[3])
+      : null;
+    const kind = number ? (type === 'issues' ? 'issue' : 'pr') : 'repository';
+    const repo = `${owner}/${repoName}`;
+    const url = number
+      ? `https://github.com/${repo}/${type}/${number}`
+      : `https://github.com/${repo}`;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    refs.push({
+      url,
+      repo,
+      kind,
+      number,
+    });
+  }
+  return refs;
+}
+
+function normalizeGithubRemote(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/github\.com[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/i);
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
+}
+
+function projectGithubRepository(projectDir) {
+  if (!projectDir) return null;
+  try {
+    const config = fs.readFileSync(path.join(projectDir, '.git', 'config'), 'utf8');
+    const origin = config.match(/\[remote\s+"origin"\][\s\S]*?\n\s*url\s*=\s*([^\r\n]+)/i);
+    if (origin) return normalizeGithubRemote(origin[1]);
+    const anyRemote = config.match(/\n\s*url\s*=\s*([^\r\n]+)/i);
+    return anyRemote ? normalizeGithubRemote(anyRemote[1]) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function uniqueGoalId(projectDir, objective, refs) {
+  const { registry } = readRegistry(projectDir);
+  const existing = new Set(((registry && registry.goals) || [])
+    .map((goal) => goal.goal_id || goal.id)
+    .filter(Boolean));
+  const issueRefs = refs.filter((ref) => ref.kind !== 'repository');
+  let base;
+  if (issueRefs.length === 1) {
+    const repo = issueRefs[0].repo.split('/')[1];
+    base = `${repo}-issue-${issueRefs[0].number}`;
+  } else if (issueRefs.length > 1) {
+    base = `${issueRefs[0].repo.split('/')[1]}-issues`;
+  } else {
+    base = String(objective)
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 42);
+  }
+  if (!base) {
+    const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    base = `task-${stamp}`;
+  }
+  let goalId = base;
+  let suffix = 2;
+  while (existing.has(goalId)) goalId = `${base}-${suffix++}`;
+  return goalId;
+}
+
+function readGoalObjective(projectDir, goal) {
+  const stateFile = goal && goal.state_file;
+  if (!stateFile) return null;
+  const root = projectDir || goal.repo;
+  if (!root) return null;
+  try {
+    const content = fs.readFileSync(path.resolve(root, stateFile), 'utf8');
+    const yaml = content.match(/^objective:\s*(.+)$/m);
+    if (yaml) {
+      const raw = yaml[1].trim();
+      if (raw.startsWith('"')) {
+        try { return JSON.parse(raw); } catch (_) {}
+      }
+      return raw.replace(/^['"]|['"]$/g, '');
+    }
+    const section = content.match(/## Objective\s+([\s\S]*?)(?:\n## |$)/);
+    return section ? section[1].trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function planIssueIntake({ argvPrefix, srcDir, projectDir, url }) {
+  const planArgsBase = ['issue-fix', 'workflow-plan', '--url', String(url).trim()];
+  if (projectDir) planArgsBase.push('--repo-path', projectDir);
+  let result, payload;
+  ({ result, payload } = await runJson(argvPrefix, projectDir, [
+    ...planArgsBase, '--fetch-metadata', '--fetch-timeout-seconds', '20',
+  ], { srcDir, timeoutMs: 90000 }));
+  let fetchedMetadata = true;
+  const planEmpty = (value) => !value || value.ok === false
+    || !(value.ordered_loopx_todo_writeback_preview || []).length;
+  if (planEmpty(payload)) {
+    fetchedMetadata = false;
+    ({ result, payload } = await runJson(argvPrefix, projectDir, planArgsBase, {
+      srcDir, timeoutMs: 90000,
+    }));
+  }
+  if (!payload) {
+    return { ok: false, error: result.stderr.trim() || 'loopx returned no JSON payload', raw: null };
+  }
+  const preview = (payload.ordered_loopx_todo_writeback_preview || [])
+    .filter((entry) => entry && entry.task_class && entry.text)
+    .map((entry) => ({
+      order: entry.planner_order ?? null,
+      role: entry.role || 'agent',
+      priority: entry.priority ?? null,
+      taskClass: entry.task_class,
+      actionKind: entry.action_kind ?? null,
+      text: entry.text,
+    }));
+  return {
+    ok: result.code === 0 && payload.ok !== false,
+    fetchedMetadata,
+    issueSignal: payload.issue_signal ?? null,
+    branchPlan: payload.branch_plan ?? null,
+    feasibilityRoutes: payload.feasibility_checkpoint_plan?.routes ?? null,
+    todosPreview: preview,
+    raw: payload,
+  };
+}
+
+async function writePlannedTodos({ argvPrefix, srcDir, projectDir, goalId, agentId, intake }) {
+  const preview = intake.todosPreview || [];
+  if (!preview.length) return { ...intake, ok: false, error: 'workflow-plan produced no writable todos' };
+  const repoLabel = intake.issueSignal?.repo || null;
+  const written = [];
+  for (const todo of preview) {
+    const args = [
+      'todo', 'add', '--goal-id', goalId, '--role', todo.role,
+      '--task-class', todo.taskClass, '--text', todo.text,
+    ];
+    if (todo.actionKind) args.push('--action-kind', todo.actionKind);
+    if (repoLabel) args.push('--task-repository', `git:github.com/${repoLabel}`);
+    if (todo.role === 'agent' && agentId) args.push('--claimed-by', agentId);
+    try {
+      const response = await runJson(argvPrefix, projectDir, args, { srcDir });
+      const ok = response.result.code === 0 && response.payload?.ok !== false;
+      written.push({
+        actionKind: todo.actionKind,
+        ok,
+        todoId: response.payload?.todo_id ?? null,
+        error: ok ? null : (response.payload?.error || response.result.stderr.slice(0, 200) || 'todo add failed'),
+      });
+    } catch (err) {
+      written.push({ actionKind: todo.actionKind, ok: false, todoId: null, error: String(err.message || err) });
+    }
+  }
+  return { ...intake, written, ok: intake.ok && written.every((entry) => entry.ok) };
 }
 
 module.exports = {
@@ -345,80 +525,135 @@ module.exports = {
     if (!url || !/^https:\/\/github\.com\//.test(String(url).trim())) {
       throw new Error('loopx.issueIntake: url must be a public https://github.com/ issue or PR link');
     }
-    const planArgsBase = ['issue-fix', 'workflow-plan', '--url', String(url).trim()];
-    if (projectDir) planArgsBase.push('--repo-path', projectDir);
-    // Prefer live GitHub metadata; fall back to offline URL-only parsing when
-    // the fetch fails (private/nonexistent repo, no network).
-    let result, payload;
-    ({ result, payload } = await runJson(argvPrefix, projectDir, [
-      ...planArgsBase, '--fetch-metadata', '--fetch-timeout-seconds', '20',
-    ], { srcDir, timeoutMs: 90000 }));
-    let fetchedMetadata = true;
-    const planEmpty = (p) => !p || p.ok === false
-      || !(p.ordered_loopx_todo_writeback_preview || []).length;
-    if (planEmpty(payload)) {
-      fetchedMetadata = false;
-      ({ result, payload } = await runJson(argvPrefix, projectDir, planArgsBase, {
-        srcDir, timeoutMs: 90000,
-      }));
-    }
-    if (!payload) {
-      return { ok: false, error: result.stderr.trim() || 'loopx returned no JSON payload', raw: null };
-    }
-    const preview = (payload.ordered_loopx_todo_writeback_preview || [])
-      .filter((e) => e && e.task_class && e.text)
-      .map((e) => ({
-        order: e.planner_order ?? null,
-        role: e.role || 'agent',
-        priority: e.priority ?? null,
-        taskClass: e.task_class,
-        actionKind: e.action_kind ?? null,
-        text: e.text,
-      }));
-    const intake = {
-      ok: result.code === 0 && payload.ok !== false,
-      fetchedMetadata,
-      issueSignal: payload.issue_signal ?? null,
-      branchPlan: payload.branch_plan ?? null,
-      feasibilityRoutes: payload.feasibility_checkpoint_plan?.routes ?? null,
-      todosPreview: preview,
-      raw: payload,
-    };
+    const intake = await planIssueIntake({ argvPrefix, srcDir, projectDir, url });
     if (!execute) return intake;
-
     if (!goalId) throw new Error('loopx.issueIntake: goalId is required to write todos');
-    if (!preview.length) return { ...intake, ok: false, error: 'workflow-plan produced no writable todos' };
-    const repoLabel = payload.issue_signal?.repo || null;
-    const written = [];
-    for (const t of preview) {
-      const args = [
-        'todo', 'add',
-        '--goal-id', goalId,
-        '--role', t.role,
-        '--task-class', t.taskClass,
-        '--text', t.text,
-      ];
-      if (t.actionKind) args.push('--action-kind', t.actionKind);
-      if (repoLabel) args.push('--task-repository', `git:github.com/${repoLabel}`);
-      try {
-        const r = await runJson(argvPrefix, projectDir, args, { srcDir });
-        const ok = r.result.code === 0 && r.payload?.ok !== false;
-        written.push({
-          actionKind: t.actionKind,
-          ok,
-          todoId: r.payload?.todo_id ?? null,
-          error: ok ? null : (r.payload?.error || r.result.stderr.slice(0, 200) || 'todo add failed'),
-        });
-      } catch (err) {
-        written.push({ actionKind: t.actionKind, ok: false, todoId: null, error: String(err.message || err) });
-      }
+    return writePlannedTodos({ argvPrefix, srcDir, projectDir, goalId, agentId: null, intake });
+  },
+
+  // Product-level task intake. This adapts natural-language goals, repository
+  // URLs, and one or more Issue/PR URLs onto LoopX's public CLI without
+  // changing LoopX itself.
+  async 'loopx.taskIntake'({
+    argvPrefix = null,
+    srcDir = null,
+    projectDir = null,
+    objective,
+    agentId,
+  } = {}) {
+    const text = String(objective || '').trim();
+    if (!projectDir) throw new Error('loopx.taskIntake: a local project directory is required');
+    if (!text) throw new Error('loopx.taskIntake: objective is required');
+    if (text.length > 4000) throw new Error('loopx.taskIntake: objective is too long (max 4000 characters)');
+    if (!agentId) throw new Error('loopx.taskIntake: agentId is required');
+
+    const refs = githubReferences(text);
+    const issueRefs = refs.filter((ref) => ref.kind === 'issue' || ref.kind === 'pr');
+    const requestedRepos = [...new Set(refs.map((ref) => ref.repo.toLowerCase()))];
+    const projectRepo = projectGithubRepository(projectDir);
+    if (requestedRepos.length > 1) {
+      return {
+        ok: false,
+        code: 'multiple_repositories',
+        error: 'One LoopX goal must target a single local repository. Split links from different repositories into separate tasks.',
+        requestedRepos,
+      };
     }
-    return { ...intake, written, ok: intake.ok && written.every((w) => w.ok) };
+    if (requestedRepos.length === 1 && projectRepo && requestedRepos[0] !== projectRepo) {
+      return {
+        ok: false,
+        code: 'repository_mismatch',
+        error: `The selected checkout is ${projectRepo}, but the task targets ${requestedRepos[0]}.`,
+        requestedRepo: requestedRepos[0],
+        projectRepo,
+      };
+    }
+
+    const goalId = uniqueGoalId(projectDir, text, refs);
+    const bootstrap = await runJson(argvPrefix, projectDir, [
+      'bootstrap', '--project', projectDir, '--goal-id', goalId,
+      '--objective', text,
+      '--adapter-kind', 'read_only_project_map_v0',
+      '--adapter-status', 'connected-read-only',
+      '--no-onboarding-scan', '--codex-app-heartbeat', 'ask',
+    ], { srcDir, timeoutMs: 90000 });
+    if (bootstrap.result.code !== 0 || bootstrap.payload?.ok === false) {
+      return {
+        ok: false,
+        code: 'bootstrap_failed',
+        goalId,
+        error: bootstrap.payload?.error || bootstrap.result.stderr.trim() || 'loopx bootstrap failed',
+      };
+    }
+
+    const registration = await runJson(argvPrefix, projectDir, [
+      'register-agent', '--goal-id', goalId, '--agent-id', agentId, '--execute',
+    ], { srcDir, timeoutMs: 60000 });
+    if (registration.result.code !== 0 || registration.payload?.ok === false) {
+      return {
+        ok: false,
+        code: 'agent_registration_failed',
+        goalId,
+        created: true,
+        error: registration.payload?.error || registration.result.stderr.trim() || 'agent registration failed',
+      };
+    }
+
+    const issueResults = [];
+    const written = [];
+    if (issueRefs.length) {
+      for (const ref of issueRefs) {
+        const intake = await planIssueIntake({ argvPrefix, srcDir, projectDir, url: ref.url });
+        const result = intake.ok
+          ? await writePlannedTodos({ argvPrefix, srcDir, projectDir, goalId, agentId, intake })
+          : intake;
+        issueResults.push({ url: ref.url, ...result });
+        written.push(...(result.written || []));
+      }
+    } else {
+      const args = [
+        'todo', 'add', '--goal-id', goalId, '--role', 'agent',
+        '--task-class', 'advancement_task', '--action-kind', 'deliver_user_goal',
+        '--claimed-by', agentId, '--text', `[P0] ${text}`,
+      ];
+      const repository = requestedRepos[0] || projectRepo;
+      if (repository) args.push('--task-repository', `git:github.com/${repository}`);
+      const todo = await runJson(argvPrefix, projectDir, args, { srcDir, timeoutMs: 60000 });
+      const ok = todo.result.code === 0 && todo.payload?.ok !== false;
+      written.push({
+        ok,
+        todoId: todo.payload?.todo_id ?? null,
+        actionKind: 'deliver_user_goal',
+        error: ok ? null : (todo.payload?.error || todo.result.stderr.trim() || 'todo add failed'),
+      });
+    }
+
+    await runJson(argvPrefix, projectDir, [
+      'refresh-state', '--goal-id', goalId, '--project', projectDir,
+    ], { srcDir, timeoutMs: 60000 });
+    const ok = written.length > 0 && written.every((entry) => entry.ok)
+      && issueResults.every((entry) => entry.ok);
+    return {
+      ok,
+      code: ok ? 'created' : 'todo_write_failed',
+      created: true,
+      goalId,
+      objective: text,
+      intakeKind: issueRefs.length ? 'issues' : (refs.length ? 'repository' : 'goal'),
+      issueCount: issueRefs.length,
+      repository: requestedRepos[0] || projectRepo,
+      written,
+      issueResults,
+      error: ok ? null : (written.find((entry) => !entry.ok)?.error
+        || issueResults.find((entry) => !entry.ok)?.error
+        || 'task creation did not produce runnable todos'),
+    };
   },
 
   async 'loopx.listGoals'({ argvPrefix = null, projectDir = null } = {}) {
     const { registryPath, registry } = readRegistry(projectDir);
     const agentsByGoal = {};
+    const objectivesByGoal = {};
     const registryGoals = (registry && registry.goals) || [];
     for (const goal of registryGoals) {
       const goalId = goal.goal_id || goal.id;
@@ -427,6 +662,7 @@ module.exports = {
       agentsByGoal[goalId] = (coordination.registered_agents || [])
         .map((a) => (typeof a === 'string' ? a : a.agent_id || a.id))
         .filter(Boolean);
+      objectivesByGoal[goalId] = readGoalObjective(projectDir, goal);
     }
 
     const { result, payload } = await runJson(argvPrefix, projectDir, ['quota', 'status']);
@@ -436,7 +672,13 @@ module.exports = {
     const pushGoal = (goalId, state, extra = {}) => {
       if (!goalId || seen.has(goalId)) return;
       seen.add(goalId);
-      goals.push({ goalId, state: state || null, agents: agentsByGoal[goalId] || [], ...extra });
+      goals.push({
+        goalId,
+        state: state || null,
+        agents: agentsByGoal[goalId] || [],
+        objective: objectivesByGoal[goalId] || null,
+        ...extra,
+      });
     };
     // quota status groups goals by state; shapes vary by schema version, so
     // walk any {state: [goal…]} mapping and any flat goals list defensively.
@@ -538,10 +780,14 @@ module.exports = {
     host = null,          // 'codex-cli' | 'generic-cli'
     codexBin = null,
     hostCommandJson = null,
+    validationCommandJson = null,
     timeoutSeconds = null,
     srcDir = null,
   } = {}) {
-    const params = { projectDir, goalId, agentId, host, codexBin, hostCommandJson, timeoutSeconds };
+    const params = {
+      projectDir, goalId, agentId, host, codexBin, hostCommandJson,
+      validationCommandJson, timeoutSeconds,
+    };
     validateRunOnceParams(params);
     if (runOnceChildren.has(goalId)) {
       throw new Error(`loopx.runOnce: a run for goal "${goalId}" is already in flight`);
@@ -551,10 +797,11 @@ module.exports = {
     const startedAt = Date.now();
     // With no RPC held open, the host's 3-minute idle reaper could kill this
     // worker mid-turn if loopx stays quiet; every event is a stderr line and
-    // refreshes the host's last-activity clock, so tick once a minute.
+    // refreshes the host's last-activity clock. The UI also uses these ticks
+    // as quiet progress feedback while a buffered host adapter is running.
     const keepalive = setInterval(() => {
       global.rpcEmit('runOnce:tick', { goalId, elapsedMs: Date.now() - startedAt });
-    }, 60000);
+    }, 10000);
     (async () => {
       try {
         const args = buildRunOnceArgs(params);
