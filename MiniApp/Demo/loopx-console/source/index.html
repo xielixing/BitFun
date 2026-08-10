@@ -22,9 +22,9 @@
         <svg class="project-switcher__chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
       </button>
       <div class="topbar__spacer"></div>
-      <div class="runtime-status" hidden>
+      <div class="runtime-status">
         <span id="hb-presence" class="presence presence--idle"><span class="presence__dot"></span><span id="hb-presence-text"></span></span>
-        <span id="hb-next"></span>
+        <span id="hb-next" class="hb-next"></span>
       </div>
       <div class="topbar__actions">
         <button id="btn-refresh" class="btn btn--icon" type="button" data-i18n-attr="title" data-i18n="refresh">
@@ -51,9 +51,14 @@
 
     <main class="layout">
       <section id="goal-list" class="board">
-        <div id="goals-empty" class="empty">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg>
-          <span data-i18n="goalsEmpty">尚无目标</span>
+        <div id="goals-empty" class="empty hero">
+          <div class="hero__badge" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3v6h-6"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </div>
+          <h2 class="hero__title" data-i18n="heroTitle">粘贴链接，自动修复 GitHub Issues</h2>
+          <p class="hero__hint" data-i18n="heroHint">一个 Issue 链接修复单个问题；仓库或 Issues 列表链接会列出全部 open issues 供你勾选，然后由 BitFun Agent 逐个修复。</p>
         </div>
       </section>
     </main>
@@ -61,7 +66,7 @@
     <section class="composer" aria-label="Create task">
       <div id="task-feedback" class="composer__feedback" role="status" hidden></div>
       <div class="composer__box">
-        <textarea id="task-input" rows="2" maxlength="4000" data-i18n-placeholder="taskPlaceholder" placeholder="描述你想完成的目标，或粘贴 GitHub Issue / 仓库链接"></textarea>
+        <textarea id="task-input" rows="2" maxlength="4000" data-i18n-placeholder="taskPlaceholder" placeholder="粘贴 GitHub Issue / 仓库 / Issues 列表链接，可附加修复要求"></textarea>
         <div class="composer__footer">
           <div class="composer__context"><span id="task-kind" class="composer__kind" hidden></span></div>
           <button id="btn-create-task" class="composer__submit" type="button" data-i18n-title="taskCreate">
@@ -99,22 +104,42 @@
     <dialog id="dlg-settings" class="dlg">
       <form method="dialog" class="dlg__form">
         <h2 data-i18n="settings">设置</h2>
+        <p class="dlg__note" data-i18n="settingsNote">仅当自动探测失败时才需要配置。</p>
         <label class="field"><span data-i18n="setPrefix">loopx 调用命令（JSON 数组，留空自动探测）</span><input id="set-prefix" type="text" spellcheck="false" placeholder='["loopx"]' /></label>
         <label class="field"><span data-i18n="setSrcDir">loopx 源码目录</span><input id="set-srcdir" type="text" spellcheck="false" placeholder="C:\path\to\loopx" /></label>
-        <label class="field"><span data-i18n="setHost">Run-once host</span><select id="set-host"><option value="codex-cli">codex-cli</option><option value="generic-cli">generic-cli</option></select></label>
-        <label class="field" id="field-codexbin"><span data-i18n="setCodexBin">codex 可执行文件路径</span><input id="set-codexbin" type="text" spellcheck="false" placeholder="codex" /></label>
-        <label class="field" id="field-hostjson"><span data-i18n="setHostJson">host-command-json</span><input id="set-hostjson" type="text" spellcheck="false" placeholder='["python","adapter.py"]' /></label>
-        <label class="field"><span data-i18n="setValidationJson">validation-command-json</span><input id="set-validatorjson" type="text" spellcheck="false" placeholder='["python","validator.py"]' /></label>
-        <label class="field"><span data-i18n="setDefaultAgent">新任务默认 Agent</span><input id="set-default-agent" type="text" spellcheck="false" placeholder="bitfun-agent" /></label>
-        <label class="field"><span data-i18n="setTimeout">Run-once 超时（秒，≤240）</span><input id="set-timeout" type="number" min="10" max="240" value="120" /></label>
-        <div class="dlg__actions"><button value="cancel" class="btn" data-i18n="cancel">取消</button><button value="save" id="btn-save-settings" class="btn btn--primary" data-i18n="save">保存</button></div>
+        <div class="dlg__actions"><button type="button" value="cancel" class="btn dlg-cancel" data-i18n="cancel">取消</button><button value="save" id="btn-save-settings" class="btn btn--primary" data-i18n="save">保存</button></div>
       </form>
     </dialog>
 
-    <dialog id="dlg-run" class="dlg">
+    <dialog id="dlg-intake" class="dlg dlg--wide">
       <form method="dialog" class="dlg__form">
-        <h2 data-i18n="runConfirmTitle">执行单次 Turn？</h2><p class="dlg__note" data-i18n="runConfirmNote">将执行以下命令：</p><pre id="run-argv" class="run-argv"></pre>
-        <div class="dlg__actions"><button value="cancel" class="btn" data-i18n="cancel">取消</button><button value="run" id="btn-confirm-run" class="btn btn--primary" data-i18n="runConfirm">执行</button></div>
+        <h2 id="intake-title"></h2>
+        <p id="intake-summary" class="dlg__note"></p>
+        <div id="intake-selectbar" class="intake-selectbar" hidden>
+          <label class="intake-selectall"><input type="checkbox" id="intake-select-all" checked /><span data-i18n="intakeSelectAll">全选</span></label>
+          <span id="intake-count" class="intake-count"></span>
+        </div>
+        <div id="intake-issues" class="intake-issues" hidden></div>
+        <label class="field" id="intake-mode" hidden>
+          <span data-i18n="intakeTargetLabel">写入到</span>
+          <select id="intake-goal-select"></select>
+        </label>
+        <div class="dlg__actions">
+          <button type="button" value="cancel" class="btn dlg-cancel" data-i18n="cancel">取消</button>
+          <button value="confirm" id="btn-intake-confirm" class="btn btn--primary" data-i18n="intakeConfirmNew">创建任务</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dlg-approve" class="dlg">
+      <form method="dialog" class="dlg__form">
+        <h2 data-i18n="approveTitle">确认这项操作？</h2>
+        <p id="approve-text" class="approve-text"></p>
+        <label class="field"><span data-i18n="approveNote">备注（可选）</span><input id="approve-note" type="text" spellcheck="false" /></label>
+        <div class="dlg__actions">
+          <button type="button" value="cancel" class="btn dlg-cancel" data-i18n="cancel">取消</button>
+          <button value="approve" class="btn btn--approve" data-i18n="approveConfirm">确认批准</button>
+        </div>
       </form>
     </dialog>
 

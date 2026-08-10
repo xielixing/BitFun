@@ -31,18 +31,28 @@ LoopX 是一个为长任务 AI Agent 设计的状态内核 + 本地控制平面�
 - **心跳只做监控**（`quota should-run` + `quota status`），不执行任何 turn。
   注意 loopx 会为每次 should-run 在 `<runtime_root>/goals/<id>/rollout-event-log.jsonl`
   追加一条 rollout 事件（loopx 侧行为，非本程序写入）。
-- **看板式 UI**：目标按"需要人做什么"分列——等你处理（gate 置顶）、可运行、
-  监控中；停表 / 异常列仅在有成员时出现。每张卡片一句叙述行说明当前该做什么。
-- **Issue 快速入口**：粘贴 GitHub issue / PR 链接 → `issue-fix workflow-plan`
-  解析（优先在线抓取公开 metadata，失败回退离线 URL 解析）→ 预览分支计划与
-  ordered todos → 一键写回所选 goal（逐条 `loopx todo add`）→ 心跳接管。
-- **执行是手动的**：点击 goal 卡片上的 "执行一次" 按钮，确认对话框展示的
-  argv 与 worker 实际 spawn 的完全一致（同一函数生成），确认后运行
-  `loopx turn run-once --execute`（上游标注 experimental）。运行期间 stderr
-  进度实时显示在日志面板（loopx 的 json 模式在 stdout 只输出一份最终 JSON），
-  可随时点击"取消运行"终止整个进程树。
-- 窗口最小化或切到其它 BitFun 标签（iframe 不可见）时心跳自动暂停，
-  切回时立即补一次轮询。
+- **输入框优先，Issue 场景专精**：空看板时整个应用就是一个居中大输入框。
+  支持三种输入，全部围绕 GitHub Issues（自由目标暂未开放，后续将绑定 loopx
+  capabilities）：单个 Issue 链接（走完整 `issue-fix workflow-plan` 生成有序
+  todos）；仓库链接或 Issues 列表链接（`…/owner/repo` 或 `…/issues`，通过匿名
+  GitHub REST API 展开为 open issues 清单，60 次/小时配额，仅公开仓库）。
+- **确认单（唯一的刻意停顿）**：多个 issue 时弹出勾选清单（默认全选，超量
+  截断会标注）；已有进行中任务时可选择「新建任务」或「引导现有任务」（引导 =
+  把这段话作为 P0 todo 写入选中的 goal，agent 自动注册）。单一 issue 且无
+  进行中任务时直接创建，零打扰。
+- **执行引擎是 BitFun 自己**：turn 通过宿主 Agent 桥（`app.agent.run`，隐藏
+  会话，按 goal 复用）执行；worker 用 `loopx heartbeat-prompt --compact` 生成
+  任务体并加上仓库/registry 绑定前言。没有外部 CLI host，用户不需要配置任何
+  执行参数（设置里只剩 loopx 探测兜底两项）。
+- **自动连续执行**：由输入框创建的任务默认开启 auto-run——每次轮询
+  should_run=true 且无 gate 时自动执行下一轮 turn，直到修完全部 todos、
+  遇到 gate、或连续失败 3 次熔断（熔断会关闭开关并通知）。
+- **审批必须显眼**：等待用户的 goal 置于看板最左列（脉冲高亮 + 徽标），
+  卡片直接展示第一条待批事项；详情抽屉列出全部 user 车道 open todos，
+  一键「批准 / 完成」（user_gate 自动带 `--decision-outcome approve`）并立即
+  重新轮询；新 gate 出现时发系统通知（需要 notifications 权限）。
+- 窗口最小化或切到其它 BitFun 标签（iframe 不可见）时心跳暂停，但 turn
+  完成后的决策轮询会穿透暂停——后台批量修复与审批通知不受影响。
 
 ## 数据流
 
@@ -63,8 +73,8 @@ iframe (ui.js 心跳状态机)
 2. **Bun 或 Node.js**（BitFun worker 运行时）。
 3. 至少一个 loopx registry：全局 `~/.codex/loopx/registry.global.json`，
    或某项目下的 `.loopx/registry.json`（在工具栏选择项目目录）。
-4. run-once 需要 host adapter：`codex-cli`（默认，需 codex 二进制）或
-   `generic-cli`（需在设置中提供 host-command-json 适配器 argv）。
+4. Turn 执行由 BitFun 宿主 Agent 完成（meta.json 已声明 agent 权限），
+   无需任何外部 CLI host 或适配器配置。
 
 ## 安装
 
@@ -79,10 +89,10 @@ iframe (ui.js 心跳状态机)
 
 | 文件 | 职责 |
 |---|---|
-| `source/ui.js` | 心跳状态机（单 setTimeout 链 + 每 goal 到期时间）、看板渲染（指纹节流）、issue 入口、i18n |
-| `source/worker.js` | loopx CLI 封装：探测、should-run、turn plan、run-once（含取消）、argv 预览、issue intake（workflow-plan → todo 写回） |
-| `source/index.html` / `style.css` | 看板 UI 骨架与主题（继承 `--bitfun-*` 令牌，明暗自适应） |
-| `meta.json` | 权限：shell(loopx/python/py)、fs 读 home、node worker |
+| `source/ui.js` | 心跳状态机（单 setTimeout 链 + 每 goal 到期时间）、看板渲染（指纹节流）、输入框 intake（分类 → 确认单 → 事件驱动创建）、宿主 Agent turn 执行（app.agent.run + agent:event）、auto-run 熔断、gate 审批、i18n |
+| `source/worker.js` | loopx CLI 封装：探测、should-run、resolveIntake（含 GitHub open issues 匿名枚举）、taskIntake（事件驱动批量写入）、turnPrompt（heartbeat-prompt 任务体 + 仓库绑定前言）、todo list/complete |
+| `source/index.html` / `style.css` | 首屏 hero + 看板 UI 骨架与主题（继承 `--bitfun-*` 令牌，明暗自适应） |
+| `meta.json` | 权限：shell(loopx/python/py)、fs 读 home、net(api.github.com)、系统通知、agent（宿主执行）、node worker |
 
 ## 独立冒烟测试（脱离 BitFun）
 
@@ -109,19 +119,37 @@ unchanged-poll backoff, max clamp, `reset_token` reset semantics, and the
 contract's `unchanged_identity_keys` for change detection). Note that loopx
 itself appends a rollout event per should-run call.
 
-The UI is a Symphony-style board organized around "what needs a human":
-**Awaiting you** (gates, pinned first), **Should run**, **Monitoring** — with
-Stopped / Errors columns appearing only when non-empty. Each card leads with a
-one-line narration of the next action. A **+ Issue** entry accepts a GitHub
-issue / PR URL: `issue-fix workflow-plan` parses it (live metadata fetch with
-an offline URL-only fallback), previews the branch plan and ordered todos, and
-one click writes them into a chosen goal via `loopx todo add` — the heartbeat
-takes over from there. Executing an actual turn
-(`loopx turn run-once --execute`, experimental upstream) stays manual: a
-confirmation dialog previews the exact argv the worker will spawn, stderr
-streams into the log panel, and cancel kills the whole process tree. The
-heartbeat pauses whenever the iframe is hidden and resumes with an immediate
-poll.
+The UI is composer-first and issue-focused: an empty board is one big
+centered input that takes a GitHub issue link, a repository link, or an
+issues-list URL (`…/owner/repo/issues`) — the latter two expand into the
+repo's open issues via the anonymous GitHub REST API (public repos, 60
+req/h). Free-form goals are deliberately closed for now (they will bind to
+specific loopx capabilities later). The one deliberate stop is a
+confirmation sheet: pick which issues to fix (all selected by default,
+truncation flagged), and when tasks are already running choose between
+**new task** and **guiding an existing task** (guidance lands as a P0 todo;
+the agent is auto-registered). Task creation is event-driven
+(`taskIntake:progress/done`): bootstrap + register-agent + one
+`[P1] Fix GitHub issue #N` todo per issue (a single issue takes the full
+`issue-fix workflow-plan` route instead).
+
+Execution runs on BitFun itself: each turn calls `app.agent.run` (the host
+agent bridge, one hidden session per goal, reused for context) with a prompt
+composed by the worker — `loopx heartbeat-prompt --compact` plus a
+repository/registry binding preamble. No external CLI host, no execution
+settings; Settings only keeps the loopx-detection fallbacks. Composer-made
+tasks default to **auto-run**: every fresh should_run decision with no open
+gate fires the next turn, until the todos are done, a gate opens, or three
+consecutive failures trip the breaker (which visibly disables the toggle and
+notifies).
+
+Approvals are loud by design: gated goals sit in the leftmost board column
+with a pulsing highlight and show their first pending ask on the card; the
+detail drawer lists all open user-lane todos with one-click approve
+(user_gate todos automatically get `--decision-outcome approve`), and a new
+gate raises a system notification. The heartbeat pauses while the iframe is
+hidden, but post-turn decision polls pierce the pause — background batches
+and approval notifications keep flowing.
 
 **Install**: use the Mini Apps gallery's **Import from folder** on this directory
 (`MiniApp/Demo/loopx-console`). Do not copy the folder into the miniapps data

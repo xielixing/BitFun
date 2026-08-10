@@ -14,7 +14,9 @@
       "write": ["{appdata}"]
     },
     "shell": { "allow": ["loopx", "python", "py"] },
-    "net": { "allow": [] },
+    "net": { "allow": ["api.github.com"] },
+    "notifications": { "system": true },
+    "agent": { "enabled": true },
     "node": {
       "enabled": true,
       "max_memory_mb": 256,
