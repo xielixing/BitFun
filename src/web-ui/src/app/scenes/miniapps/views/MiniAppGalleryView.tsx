@@ -13,7 +13,7 @@ import {
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSceneManager } from '@/app/hooks/useSceneManager';
 import MiniAppCard from '../components/MiniAppCard';
-import type { MiniAppMeta, MiniAppPackageInspection } from '@/infrastructure/api/service-api/MiniAppAPI';
+import type { MiniAppMeta, MiniAppPackageInspection, MiniAppPermissions } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { Search, ConfirmDialog, Button, Badge } from '@/component-library';
@@ -228,10 +228,41 @@ const MiniAppGalleryView: React.FC = () => {
     }
   };
 
+  const formatPermissions = (permissions: MiniAppPermissions | undefined): string[] => {
+    const none = t('package.permNone');
+    const fs = permissions?.fs;
+    const shell = permissions?.shell;
+    const net = permissions?.net;
+    const node = permissions?.node;
+    const ai = permissions?.ai;
+    const agent = permissions?.agent;
+    const notifications = permissions?.notifications;
+    const nodeState = node?.enabled
+      ? t('package.permNodeDetail', {
+          mem: String(node.max_memory_mb ?? '?'),
+          timeout: String(Math.round((node.timeout_ms ?? 0) / 1000)),
+        })
+      : t('package.disabled');
+    return [
+      `${t('package.permFsRead')}: ${fs?.read?.length ? fs.read.join(', ') : none}`,
+      `${t('package.permFsWrite')}: ${fs?.write?.length ? fs.write.join(', ') : none}`,
+      `${t('package.permShell')}: ${shell?.allow?.length ? shell.allow.join(', ') : none}`,
+      `${t('package.permNet')}: ${net?.allow?.length ? net.allow.join(', ') : none}`,
+      `${t('package.permNode')}: ${nodeState}`,
+      `${t('package.permAi')}: ${ai?.enabled ? t('package.enabled') : t('package.disabled')}`,
+      `${t('package.permAgent')}: ${agent?.enabled ? t('package.enabled') : t('package.disabled')}`,
+      `${t('package.permNotifications')}: ${notifications?.system ? t('package.enabled') : t('package.disabled')}`,
+    ];
+  };
+
   const packagePreview = pendingPackage ? [
     `${t('package.publisher')}: ${pendingPackage.inspection.manifest.publisher.name}`,
     `${t('package.version')}: ${pendingPackage.inspection.manifest.version}`,
-    `${t('package.permissions')}: ${JSON.stringify(pendingPackage.inspection.app.permissions)}`,
+    '',
+    t('package.permissions'),
+    ...formatPermissions(pendingPackage.inspection.app.permissions),
+    '',
+    t('package.runtimeSection'),
     ...pendingPackage.inspection.runtime_dependencies.map((runtime) =>
       `${runtime.label || runtime.id} ${runtime.requirement}: ${runtime.satisfied ? runtime.detected_version ?? t('package.available') : runtime.message}`
     ),
@@ -418,6 +449,7 @@ const MiniAppGalleryView: React.FC = () => {
         cancelText={t('package.cancel')}
         confirmDisabled={pendingPackage?.inspection.runtime_dependencies.some((runtime) => !runtime.satisfied)}
         preview={packagePreview}
+        previewMaxHeight={340}
       />
 
       <ConfirmDialog
