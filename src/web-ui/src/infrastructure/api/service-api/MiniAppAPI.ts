@@ -132,6 +132,34 @@ export interface MiniAppI18n {
   locales: Record<string, MiniAppLocaleStrings>;
 }
 
+export interface MiniAppDistributionIdentity {
+  package_id: string;
+  package_version: string;
+  publisher_id: string;
+}
+
+export interface MiniAppRuntimeDependencyStatus {
+  id: string;
+  requirement: string;
+  detected_version?: string;
+  satisfied: boolean;
+  message: string;
+}
+
+export interface MiniAppPackageInspection {
+  manifest: {
+    schema_version: number;
+    package_id: string;
+    version: string;
+    publisher: { id: string; name: string };
+    min_bitfun_version: string;
+    runtime_dependencies: Array<{ id: string; version: string }>;
+    files: Record<string, string>;
+  };
+  app: MiniAppMeta;
+  runtime_dependencies: MiniAppRuntimeDependencyStatus[];
+}
+
 export interface MiniAppMeta {
   id: string;
   name: string;
@@ -146,6 +174,7 @@ export interface MiniAppMeta {
   runtime?: MiniAppRuntimeState;
   /** Optional per-locale overrides for `name` / `description` / `tags`. */
   i18n?: MiniAppI18n;
+  distribution?: MiniAppDistributionIdentity;
 }
 
 export interface MiniApp extends MiniAppMeta {
@@ -397,6 +426,24 @@ export class MiniAppAPI {
       });
     } catch (error) {
       throw createTauriCommandError('miniapp_import_from_path', error, { path, workspacePath });
+    }
+  }
+
+  async inspectPackage(path: string): Promise<MiniAppPackageInspection> {
+    try {
+      return await api.invoke('miniapp_inspect_package', { request: { path } });
+    } catch (error) {
+      throw createTauriCommandError('miniapp_inspect_package', error, { path });
+    }
+  }
+
+  async installPackage(path: string, workspacePath?: string): Promise<MiniApp> {
+    try {
+      return await api.invoke('miniapp_install_package', {
+        request: { path, workspacePath }
+      });
+    } catch (error) {
+      throw createTauriCommandError('miniapp_install_package', error, { path, workspacePath });
     }
   }
 

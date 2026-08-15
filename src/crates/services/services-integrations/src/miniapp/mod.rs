@@ -2,6 +2,7 @@
 
 pub mod builtin_io;
 pub mod host_dispatch;
+pub mod package;
 pub mod storage;
 pub mod worker;
 pub mod worker_pool;

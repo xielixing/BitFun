@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const SKIPPED_DIRECTORIES = new Set([
+  '.bitfun',
   '.git',
   '.targets',
   '.worktrees',

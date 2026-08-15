@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::miniapp::distribution::MiniAppDistributionIdentity;
+
 /// ESM dependency for Import Map (browser UI).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EsmDep {
@@ -215,6 +217,9 @@ pub struct MiniApp {
     /// Optional per-locale overrides for `name` / `description` / `tags`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i18n: Option<MiniAppI18n>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<MiniAppDistributionIdentity>,
 }
 
 /// MiniApp metadata only (for list views; no source/compiled_html).
@@ -239,6 +244,9 @@ pub struct MiniAppMeta {
     /// Optional per-locale overrides for `name` / `description` / `tags`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i18n: Option<MiniAppI18n>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<MiniAppDistributionIdentity>,
 }
 
 impl From<&MiniApp> for MiniAppMeta {
@@ -257,6 +265,7 @@ impl From<&MiniApp> for MiniAppMeta {
             ai_context: app.ai_context.clone(),
             runtime: app.runtime.clone(),
             i18n: app.i18n.clone(),
+            distribution: app.distribution.clone(),
         }
     }
 }

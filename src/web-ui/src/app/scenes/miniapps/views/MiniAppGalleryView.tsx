@@ -3,6 +3,7 @@ import {
   Box,
   FolderPlus,
   LayoutGrid,
+  PackagePlus,
   Play,
   Sparkles,
   Square,
@@ -12,7 +13,7 @@ import {
 import { open } from '@tauri-apps/plugin-dialog';
 import { useSceneManager } from '@/app/hooks/useSceneManager';
 import MiniAppCard from '../components/MiniAppCard';
-import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
+import type { MiniAppMeta, MiniAppPackageInspection } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { Search, ConfirmDialog, Button, Badge } from '@/component-library';
@@ -53,6 +54,8 @@ const MiniAppGalleryView: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<MiniAppMeta | null>(null);
+  const [pendingPackage, setPendingPackage] = useState<{ path: string; inspection: MiniAppPackageInspection } | null>(null);
+  const [packageError, setPackageError] = useState<string | null>(null);
 
   const openTabIds = useMemo(() => new Set(openTabs.map((tab) => tab.id)), [openTabs]);
   const runningIdSet = useMemo(() => new Set(runningWorkerIds), [runningWorkerIds]);
@@ -188,6 +191,52 @@ const MiniAppGalleryView: React.FC = () => {
     }
   };
 
+  const handleSelectPackage = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        title: t('package.selectTitle'),
+        filters: [{ name: t('package.fileType'), extensions: ['bitfun-miniapp'] }],
+      });
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      if (!path) return;
+      setLoading(true);
+      const inspection = await miniAppAPI.inspectPackage(path);
+      setPendingPackage({ path, inspection });
+    } catch (error) {
+      log.error('Package inspection failed', error);
+      setPackageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInstallPackage = async () => {
+    if (!pendingPackage) return;
+    const { path } = pendingPackage;
+    setPendingPackage(null);
+    try {
+      setLoading(true);
+      const app = await miniAppAPI.installPackage(path, workspacePath || undefined);
+      setApps([app, ...apps]);
+      handleOpenApp(app.id);
+    } catch (error) {
+      log.error('Package installation failed', error);
+      setPackageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const packagePreview = pendingPackage ? [
+    `${t('package.publisher')}: ${pendingPackage.inspection.manifest.publisher.name}`,
+    `${t('package.version')}: ${pendingPackage.inspection.manifest.version}`,
+    `${t('package.permissions')}: ${JSON.stringify(pendingPackage.inspection.app.permissions)}`,
+    ...pendingPackage.inspection.runtime_dependencies.map((runtime) =>
+      `${runtime.id} ${runtime.requirement}: ${runtime.satisfied ? runtime.detected_version ?? t('package.available') : runtime.message}`
+    ),
+  ].join('\n') : '';
+
   const renderGrid = () => {
     if (loading && apps.length === 0) {
       return <GallerySkeleton count={8} cardHeight={152} />;
@@ -234,6 +283,15 @@ const MiniAppGalleryView: React.FC = () => {
         actions={(
           <>
             <Search value={search} onChange={setSearch} placeholder={t('searchPlaceholder')} size="small" />
+            <button
+              type="button"
+              className="gallery-action-btn"
+              onClick={handleSelectPackage}
+              disabled={loading}
+              title={t('package.install')}
+            >
+              <PackagePlus size={15} />
+            </button>
             <button
               type="button"
               className="gallery-action-btn gallery-action-btn--primary"
@@ -348,6 +406,30 @@ const MiniAppGalleryView: React.FC = () => {
           ) : null;
         })() : null}
       </GalleryDetailModal>
+
+      <ConfirmDialog
+        isOpen={pendingPackage !== null}
+        onClose={() => setPendingPackage(null)}
+        onConfirm={handleInstallPackage}
+        title={t('package.confirmTitle', { name: pendingPackage?.inspection.app.name ?? '' })}
+        message={t('package.confirmMessage')}
+        type={pendingPackage?.inspection.runtime_dependencies.every((runtime) => runtime.satisfied) ? 'info' : 'warning'}
+        confirmText={t('package.confirm')}
+        cancelText={t('package.cancel')}
+        confirmDisabled={pendingPackage?.inspection.runtime_dependencies.some((runtime) => !runtime.satisfied)}
+        preview={packagePreview}
+      />
+
+      <ConfirmDialog
+        isOpen={packageError !== null}
+        onClose={() => setPackageError(null)}
+        onConfirm={() => setPackageError(null)}
+        title={t('package.errorTitle')}
+        message={packageError ?? ''}
+        type="error"
+        showCancel={false}
+        confirmText={t('package.close')}
+      />
 
       <ConfirmDialog
         isOpen={pendingDeleteId !== null}

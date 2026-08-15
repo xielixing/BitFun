@@ -102,6 +102,7 @@ pub fn build_created_app(
         ai_context: input.ai_context,
         runtime,
         i18n: None,
+        distribution: None,
     }
 }
 
@@ -402,6 +403,7 @@ mod tests {
             ai_context: None,
             runtime: Default::default(),
             i18n: None,
+            distribution: None,
         };
 
         prepare_imported_meta(&mut meta, "new-id", 1234);

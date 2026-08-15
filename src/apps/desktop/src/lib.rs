@@ -1328,6 +1328,8 @@ pub async fn run() {
             api::miniapp_api::miniapp_recompile,
             api::miniapp_api::miniapp_dialog_message,
             api::miniapp_api::miniapp_import_from_path,
+            api::miniapp_api::miniapp_inspect_package,
+            api::miniapp_api::miniapp_install_package,
             api::miniapp_api::miniapp_sync_from_fs,
             api::miniapp_api::miniapp_create_draft,
             api::miniapp_api::miniapp_get_draft,

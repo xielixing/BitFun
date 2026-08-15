@@ -2205,5 +2205,6 @@ fn sample_miniapp_for_lifecycle(source: MiniAppSource) -> MiniApp {
         ai_context: None,
         runtime: MiniAppRuntimeState::default(),
         i18n: None,
+        distribution: None,
     }
 }

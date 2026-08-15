@@ -37,6 +37,8 @@ export interface ConfirmDialogProps {
   cancelText?: string;
   /** Whether the confirm button uses danger styling */
   confirmDanger?: boolean;
+  /** Whether the confirm action is unavailable. */
+  confirmDisabled?: boolean;
   /** Whether to show the cancel button */
   showCancel?: boolean;
   /** Preview content (e.g. multi-line text) */
@@ -65,6 +67,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   secondaryText,
   cancelText,
   confirmDanger = false,
+  confirmDisabled = false,
   showCancel = true,
   preview,
   previewMaxHeight = 200,
@@ -159,6 +162,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             variant={confirmDanger ? 'danger' : 'primary'}
             size="medium"
             onClick={handleConfirm}
+            disabled={confirmDisabled}
           >
             {resolvedConfirmText}
           </Button>

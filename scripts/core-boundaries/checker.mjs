@@ -533,7 +533,13 @@ function checkOptionalDependencyFeatureOwners(crateDir, rule) {
   const manifestPath = join(crateDir, 'Cargo.toml');
   const lines = readText(manifestPath).split(/\r?\n/);
   const deps = parseManifestDependencies(lines);
-  const depsByName = new Map(deps.map((dep) => [dep.name, dep]));
+  const depsByName = new Map();
+  for (const dep of deps) {
+    const existing = depsByName.get(dep.name);
+    if (!existing || (dep.optional && !existing.optional)) {
+      depsByName.set(dep.name, dep);
+    }
+  }
   const features = parseManifestFeatures(lines);
   const declaredOwnerDeps = new Set(rule.dependencies.map((dependency) => dependency.depName));
 

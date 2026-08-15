@@ -642,6 +642,7 @@ mod tests {
             ai_context: None,
             runtime: MiniAppRuntimeState::default(),
             i18n: None,
+            distribution: None,
         }
     }
 

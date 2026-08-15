@@ -13,6 +13,9 @@ use crate::util::errors::{BitFunError, BitFunResult};
 use bitfun_product_domains::miniapp::customization::{
     MiniAppCustomizationBaseline, MiniAppCustomizationMetadata, MiniAppPermissionDiff,
 };
+use bitfun_product_domains::miniapp::distribution::{
+    version_satisfies_requirement, MiniAppDistributionIdentity, MiniAppPackageInspection,
+};
 use bitfun_product_domains::miniapp::draft::MiniAppDraft;
 use bitfun_product_domains::miniapp::lifecycle::{
     build_worker_revision, MiniAppCreateInput, MiniAppUpdatePatch,
@@ -20,6 +23,9 @@ use bitfun_product_domains::miniapp::lifecycle::{
 use bitfun_product_domains::miniapp::ports::{
     MiniAppCompilePort, MiniAppImportFromPathRequest, MiniAppPortError, MiniAppPortErrorKind,
     MiniAppPortFuture, MiniAppRuntimeFacade,
+};
+use bitfun_services_integrations::miniapp::package::{
+    inspect_package, inspect_runtime_dependencies, validate_and_extract_package,
 };
 use chrono::Utc;
 use std::collections::HashMap;
@@ -608,13 +614,14 @@ impl MiniAppManager {
     ) -> BitFunResult<MiniApp> {
         let id = Uuid::new_v4().to_string();
         let imported_at = Utc::now().timestamp_millis();
-        self.runtime_facade()
+        let result = self
+            .runtime_facade()
             .import_from_path(
                 &self.storage,
                 self,
                 MiniAppImportFromPathRequest {
                     source_path,
-                    app_id: id,
+                    app_id: id.clone(),
                     theme: "dark".to_string(),
                     workspace_root: workspace_root.map(Path::to_path_buf),
                     imported_at,
@@ -622,7 +629,91 @@ impl MiniAppManager {
                 },
             )
             .await
-            .map_err(map_miniapp_port_error)
+            .map_err(map_miniapp_port_error);
+        if result.is_err() {
+            let _ = self.storage.delete(&id).await;
+        }
+        result
+    }
+
+    /// Validate an installable package and report its permissions/runtime requirements.
+    pub async fn inspect_package(
+        &self,
+        package_path: PathBuf,
+    ) -> BitFunResult<MiniAppPackageInspection> {
+        let inspection = inspect_package(package_path)
+            .await
+            .map_err(BitFunError::Validation)?;
+        if !version_satisfies_requirement(
+            crate::VERSION,
+            &format!(">={}", inspection.manifest.min_bitfun_version),
+        ) {
+            return Err(BitFunError::Validation(format!(
+                "MiniApp requires BitFun >= {}, current version is {}",
+                inspection.manifest.min_bitfun_version,
+                crate::VERSION
+            )));
+        }
+        Ok(inspection)
+    }
+
+    /// Install a validated package into a fresh app directory and compile its UI locally.
+    pub async fn install_package(
+        &self,
+        package_path: PathBuf,
+        workspace_root: Option<&Path>,
+    ) -> BitFunResult<MiniApp> {
+        let extracted =
+            tokio::task::spawn_blocking(move || validate_and_extract_package(package_path))
+                .await
+                .map_err(|error| {
+                    BitFunError::Service(format!("MiniApp package validation task failed: {error}"))
+                })?
+                .map_err(BitFunError::Validation)?;
+        if !version_satisfies_requirement(
+            crate::VERSION,
+            &format!(">={}", extracted.manifest.min_bitfun_version),
+        ) {
+            return Err(BitFunError::Validation(format!(
+                "MiniApp requires BitFun >= {}, current version is {}",
+                extracted.manifest.min_bitfun_version,
+                crate::VERSION
+            )));
+        }
+        let runtime_statuses =
+            inspect_runtime_dependencies(&extracted.manifest.runtime_dependencies).await;
+        let unavailable: Vec<_> = runtime_statuses
+            .iter()
+            .filter(|status| !status.satisfied)
+            .map(|status| format!("{} {}: {}", status.id, status.requirement, status.message))
+            .collect();
+        if !unavailable.is_empty() {
+            return Err(BitFunError::Validation(format!(
+                "MiniApp runtime requirements are not satisfied: {}",
+                unavailable.join("; ")
+            )));
+        }
+        if self.list().await?.iter().any(|app| {
+            app.distribution
+                .as_ref()
+                .is_some_and(|identity| identity.package_id == extracted.manifest.package_id)
+        }) {
+            return Err(BitFunError::Validation(format!(
+                "MiniApp package '{}' is already installed",
+                extracted.manifest.package_id
+            )));
+        }
+
+        let identity = MiniAppDistributionIdentity::from(&extracted.manifest);
+        let mut app = self
+            .import_from_path(extracted.root().to_path_buf(), workspace_root)
+            .await?;
+        app.distribution = Some(identity);
+        if let Err(error) = self.storage.save(&app).await {
+            let _ = self.storage.delete(&app.id).await;
+            return Err(error);
+        }
+        Ok(app)
     }
 }
 
@@ -821,6 +912,7 @@ mod tests {
             ai_context: None,
             runtime: Default::default(),
             i18n: None,
+            distribution: None,
         };
         tokio::fs::write(
             root.join(META_JSON),
@@ -896,6 +988,25 @@ mod tests {
         assert!(rolled_back.runtime.deps_dirty);
         assert!(rolled_back.runtime.worker_restart_required);
         assert_eq!(manager.list_versions(&app.id).await.unwrap(), vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn recompile_recovers_a_source_bundle_without_compiled_cache() {
+        let manager = test_manager();
+        let app = create_sample_app(&manager).await;
+        let compiled_path = manager
+            .path_manager()
+            .miniapp_dir(&app.id)
+            .join(COMPILED_HTML);
+        tokio::fs::remove_file(&compiled_path).await.unwrap();
+
+        let recovered = manager.recompile(&app.id, "dark", None).await.unwrap();
+
+        assert!(!recovered.compiled_html.is_empty());
+        assert_eq!(
+            tokio::fs::read_to_string(compiled_path).await.unwrap(),
+            recovered.compiled_html
+        );
     }
 
     #[tokio::test]

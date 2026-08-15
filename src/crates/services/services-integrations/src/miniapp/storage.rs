@@ -362,6 +362,7 @@ impl MiniAppStorage {
             ai_context: meta.ai_context,
             runtime: meta.runtime,
             i18n: meta.i18n,
+            distribution: meta.distribution,
         })
     }
 
@@ -447,13 +448,17 @@ impl MiniAppStorage {
 
     async fn load_compiled_html(&self, app_id: &str) -> MiniAppStorageResult<String> {
         let p = self.compiled_path(app_id);
-        tokio::fs::read_to_string(&p).await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                MiniAppStorageError::not_found(format!("Compiled HTML not found: {}", app_id))
-            } else {
-                MiniAppStorageError::io(format!("Failed to read compiled.html: {}", e))
-            }
-        })
+        match tokio::fs::read_to_string(&p).await {
+            Ok(compiled_html) => Ok(compiled_html),
+            // compiled.html is a local cache derived from source files. A copied
+            // or downloaded source bundle may legitimately omit it so the host
+            // can rebuild it for the local theme, platform, and install path.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(MiniAppStorageError::io(format!(
+                "Failed to read compiled.html: {}",
+                e
+            ))),
+        }
     }
 
     /// Save full MiniApp (meta, source files, compiled.html).
@@ -618,6 +623,7 @@ impl MiniAppStorage {
             ai_context: meta.ai_context,
             runtime: meta.runtime,
             i18n: meta.i18n,
+            distribution: meta.distribution,
         })
     }
 
@@ -1191,6 +1197,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_treats_missing_compiled_html_as_rebuildable_cache() {
+        let root = TestTempDir::new("bitfun-miniapp-missing-compiled-cache");
+        let miniapps_dir = root.path().join("miniapps");
+        let storage = MiniAppStorage::new(miniapps_dir.clone());
+        let app = sample_app("source_bundle");
+
+        storage.save(&app).await.unwrap();
+        fs::remove_file(MiniAppStorageLayout::new(&miniapps_dir, "source_bundle").compiled_path())
+            .unwrap();
+
+        let loaded = storage.load("source_bundle").await.unwrap();
+
+        assert!(loaded.compiled_html.is_empty());
+        assert_eq!(loaded.source.html, app.source.html);
+        assert_eq!(loaded.source.css, app.source.css);
+        assert_eq!(loaded.source.ui_js, app.source.ui_js);
+        assert_eq!(
+            serde_json::to_value(&loaded.permissions).unwrap(),
+            serde_json::to_value(&app.permissions).unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn storage_adapter_uses_product_domain_layout_contract() {
         let root = std::env::temp_dir().join(format!(
             "bitfun-miniapp-layout-port-{}",
@@ -1541,6 +1570,7 @@ mod tests {
             ai_context: None,
             runtime: Default::default(),
             i18n: None,
+            distribution: None,
         }
     }
 }

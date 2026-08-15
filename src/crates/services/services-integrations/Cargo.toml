@@ -47,6 +47,7 @@ rmcp = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-native-certs = { version = "0.8", optional = true }
 sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 sse-stream = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
@@ -54,6 +55,7 @@ tokio-tungstenite = { workspace = true, optional = true }
 urlencoding = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 which = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
 russh-sftp = { workspace = true, optional = true }
@@ -111,8 +113,11 @@ miniapp-runtime = [
     "dep:bitfun-product-domains",
     "dirs",
     "reqwest",
+    "sha2",
+    "tempfile",
     "uuid",
     "which",
+    "zip",
 ]
 plugin-source = [
     "bitfun-product-domains/plugin-source",

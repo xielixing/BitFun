@@ -10,6 +10,7 @@ use bitfun_core::miniapp::ai_bridge::{
     MiniAppAiMessagePlan, MiniAppAiMessageRole, MiniAppAiModelDescriptor, MiniAppAiModelInfo,
     MiniAppAiUsage,
 };
+use bitfun_core::miniapp::distribution::MiniAppPackageInspection;
 use bitfun_core::miniapp::lifecycle::{
     draft_worker_key, miniapp_runtime_event_payload, miniapp_worker_stopped_payload,
     should_emit_worker_restarted, should_stop_worker_for_runtime_update, worker_restart_reason,
@@ -65,6 +66,14 @@ pub struct MiniAppSourceDto {
     pub worker_js: String,
     #[serde(default)]
     pub npm_dependencies: Vec<NpmDepDto>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniAppPackageRequest {
+    pub path: String,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -361,7 +370,7 @@ pub async fn get_miniapp(
     state: State<'_, AppState>,
     request: GetMiniAppRequest,
 ) -> Result<MiniApp, String> {
-    let mut app = state
+    let app = state
         .miniapp_manager
         .get(&request.app_id)
         .await
@@ -369,6 +378,15 @@ pub async fn get_miniapp(
 
     let theme_type = request.theme.as_deref().unwrap_or("dark");
     let workspace_root = workspace_root_from_input(request.workspace_path.as_deref());
+    if app.compiled_html.trim().is_empty() {
+        return state
+            .miniapp_manager
+            .recompile(&request.app_id, theme_type, workspace_root.as_deref())
+            .await
+            .map_err(|e| e.to_string());
+    }
+
+    let mut app = app;
     match state.miniapp_manager.compile_source(
         &request.app_id,
         &app.source,
@@ -793,6 +811,31 @@ pub async fn miniapp_import_from_path(
     )
     .await;
     Ok(app)
+}
+
+#[tauri::command]
+pub async fn miniapp_inspect_package(
+    state: State<'_, AppState>,
+    request: MiniAppPackageRequest,
+) -> Result<MiniAppPackageInspection, String> {
+    state
+        .miniapp_manager
+        .inspect_package(PathBuf::from(request.path))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn miniapp_install_package(
+    state: State<'_, AppState>,
+    request: MiniAppPackageRequest,
+) -> Result<MiniApp, String> {
+    let workspace_root = workspace_root_from_input(request.workspace_path.as_deref());
+    state
+        .miniapp_manager
+        .install_package(PathBuf::from(request.path), workspace_root.as_deref())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
