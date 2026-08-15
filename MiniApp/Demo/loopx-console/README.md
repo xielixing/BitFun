@@ -93,9 +93,12 @@ iframe (ui.js 心跳状态机)
    选择上面的 `.bitfun-miniapp` 文件。
 3. BitFun 会校验包完整性（清单 / 哈希 / 路径安全）并弹出确认单，展示
    publisher、版本、权限和运行时依赖。运行时依赖为 **loopx CLI ≥ 0.2.13**
-   （探测 `loopx --version`）；不满足时确认按钮禁用并提示原因。
-4. 确认后安装并就地编译，随后自动打开应用。安装记录分发身份
-   （package_id / 版本 / publisher），同一包不能重复安装。
+   （声明式探测：依次尝试 `loopx --version`、`python -m loopx.cli --version`、
+   `py -3 -m loopx.cli --version`，取首个成功者解析版本）；不满足时确认按钮
+   禁用并提示原因。
+4. 确认后安装并就地编译，随后自动打开应用。安装记录分发身份（package_id /
+   版本 / publisher）：同一包同版本会被拒绝重复安装，同包新版本会作为新实例
+   并存。
 
 ### 方式 B：从源码导入（开发迭代）
 
@@ -178,10 +181,13 @@ from the BitFun repo root with `pnpm run miniapp:package:loopx`
 with a `bitfun-miniapp.json` manifest and SHA-256 file list), then click the
 install-package action in the Mini Apps gallery, pick the file, and review the
 publisher/version/permissions/runtime-dependency report (loopx CLI >= 0.2.13,
-probed via `loopx --version`) before confirming; the app is compiled locally
-and opened after install, and the distribution identity prevents duplicate
-installs. **From source**: use the Mini Apps gallery's **Import from folder** on
-this directory (`MiniApp/Demo/loopx-console`). Do not copy the folder into the
+probed via the manifest's declared commands: `loopx --version`,
+`python -m loopx.cli --version`, `py -3 -m loopx.cli --version`) before
+confirming; the app is compiled locally and opened after install, the
+distribution identity rejects re-installing the same package version, and a
+newer version of the same package installs alongside as a separate instance.
+**From source**: use the Mini Apps gallery's **Import from folder** on this
+directory (`MiniApp/Demo/loopx-console`). Do not copy the folder into the
 miniapps data directory by hand — the import step compiles the app; a
 hand-copied bundle lists in the gallery but cannot open. No npm deps.
 **Prereqs**: Python 3.11+ with loopx importable (`pip install -e <checkout>`;

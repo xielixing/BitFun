@@ -211,30 +211,28 @@ pub async fn inspect_runtime_dependencies(
 async fn inspect_runtime_dependency(
     dependency: &MiniAppRuntimeDependency,
 ) -> MiniAppRuntimeDependencyStatus {
-    if dependency.id != "org.loopx.cli" {
-        return MiniAppRuntimeDependencyStatus {
-            id: dependency.id.clone(),
-            requirement: dependency.version.clone(),
-            detected_version: None,
-            satisfied: false,
-            message: "This BitFun version does not recognize the requested runtime".to_string(),
-        };
-    }
+    let Some(probe) = &dependency.probe else {
+        return runtime_status(
+            dependency,
+            Vec::new(),
+            None,
+            false,
+            "Runtime dependency declares no probe commands".to_string(),
+        );
+    };
 
-    let candidates: &[(&str, &[&str])] = &[
-        ("loopx", &["--version"]),
-        ("python", &["-m", "loopx.cli", "--version"]),
-        ("py", &["-3", "-m", "loopx.cli", "--version"]),
-    ];
-    for (program, args) in candidates {
-        let mut command = Command::new(program);
-        command
-            .args(*args)
+    for command in &probe.commands {
+        let Some(program) = command.first() else {
+            continue;
+        };
+        let mut process = Command::new(program);
+        process
+            .args(&command[1..])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        configure_hidden_process(&mut command);
-        let Ok(result) = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, command.output()).await else {
+        configure_hidden_process(&mut process);
+        let Ok(result) = tokio::time::timeout(RUNTIME_PROBE_TIMEOUT, process.output()).await else {
             continue;
         };
         let Ok(output) = result else {
@@ -245,25 +243,43 @@ async fn inspect_runtime_dependency(
         }
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let satisfied = version_satisfies_requirement(&version, &dependency.version);
-        return MiniAppRuntimeDependencyStatus {
-            id: dependency.id.clone(),
-            requirement: dependency.version.clone(),
-            detected_version: Some(version.clone()),
+        return runtime_status(
+            dependency,
+            probe.commands.clone(),
+            Some(version),
             satisfied,
-            message: if satisfied {
+            if satisfied {
                 "Runtime dependency is available".to_string()
             } else {
                 format!("Detected runtime does not satisfy {}", dependency.version)
             },
-        };
+        );
     }
 
+    runtime_status(
+        dependency,
+        probe.commands.clone(),
+        None,
+        false,
+        "Runtime dependency is not installed or not available on PATH".to_string(),
+    )
+}
+
+fn runtime_status(
+    dependency: &MiniAppRuntimeDependency,
+    probe_commands: Vec<Vec<String>>,
+    detected_version: Option<String>,
+    satisfied: bool,
+    message: String,
+) -> MiniAppRuntimeDependencyStatus {
     MiniAppRuntimeDependencyStatus {
         id: dependency.id.clone(),
+        label: dependency.label.clone(),
         requirement: dependency.version.clone(),
-        detected_version: None,
-        satisfied: false,
-        message: "LoopX CLI is not installed or not available on PATH".to_string(),
+        detected_version,
+        satisfied,
+        message,
+        probe_commands,
     }
 }
 
@@ -279,7 +295,8 @@ fn configure_hidden_process(_command: &mut Command) {}
 mod tests {
     use super::*;
     use bitfun_product_domains::miniapp::distribution::{
-        MiniAppPublisher, MINIAPP_PACKAGE_SCHEMA_VERSION,
+        MiniAppPublisher, MiniAppRuntimeDependency, MiniAppRuntimeProbe,
+        MINIAPP_PACKAGE_SCHEMA_VERSION,
     };
     use zip::write::SimpleFileOptions;
 
@@ -338,6 +355,47 @@ mod tests {
             writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap();
+    }
+
+    #[tokio::test]
+    async fn runtime_probe_runs_declared_command_and_extracts_version() {
+        let dependency = MiniAppRuntimeDependency {
+            id: "org.example.runtime".to_string(),
+            label: "Node runtime".to_string(),
+            version: ">=0.0.0".to_string(),
+            probe: Some(MiniAppRuntimeProbe {
+                commands: vec![vec!["node".to_string(), "--version".to_string()]],
+            }),
+        };
+        let satisfied = inspect_runtime_dependency(&dependency).await;
+        assert!(satisfied.satisfied, "{satisfied:?}");
+        assert_eq!(satisfied.label, "Node runtime");
+        assert_eq!(
+            satisfied.probe_commands,
+            dependency.probe.as_ref().unwrap().commands.clone()
+        );
+        assert!(satisfied.detected_version.is_some());
+
+        let too_new = inspect_runtime_dependency(&MiniAppRuntimeDependency {
+            version: ">=999.0.0".to_string(),
+            ..dependency.clone()
+        })
+        .await;
+        assert!(!too_new.satisfied);
+        assert!(too_new.message.contains("does not satisfy"));
+
+        let missing = inspect_runtime_dependency(&MiniAppRuntimeDependency {
+            probe: Some(MiniAppRuntimeProbe {
+                commands: vec![vec![
+                    "bitfun-probe-does-not-exist".to_string(),
+                    "--version".to_string(),
+                ]],
+            }),
+            ..dependency
+        })
+        .await;
+        assert!(!missing.satisfied);
+        assert!(missing.message.contains("not installed"));
     }
 
     #[test]

@@ -233,7 +233,7 @@ const MiniAppGalleryView: React.FC = () => {
     `${t('package.version')}: ${pendingPackage.inspection.manifest.version}`,
     `${t('package.permissions')}: ${JSON.stringify(pendingPackage.inspection.app.permissions)}`,
     ...pendingPackage.inspection.runtime_dependencies.map((runtime) =>
-      `${runtime.id} ${runtime.requirement}: ${runtime.satisfied ? runtime.detected_version ?? t('package.available') : runtime.message}`
+      `${runtime.label || runtime.id} ${runtime.requirement}: ${runtime.satisfied ? runtime.detected_version ?? t('package.available') : runtime.message}`
     ),
   ].join('\n') : '';
 

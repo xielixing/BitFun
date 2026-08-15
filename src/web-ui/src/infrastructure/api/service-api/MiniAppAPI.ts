@@ -138,12 +138,18 @@ export interface MiniAppDistributionIdentity {
   publisher_id: string;
 }
 
+export interface MiniAppRuntimeProbe {
+  commands: string[][];
+}
+
 export interface MiniAppRuntimeDependencyStatus {
   id: string;
+  label?: string;
   requirement: string;
   detected_version?: string;
   satisfied: boolean;
   message: string;
+  probe_commands?: string[][];
 }
 
 export interface MiniAppPackageInspection {
@@ -153,7 +159,12 @@ export interface MiniAppPackageInspection {
     version: string;
     publisher: { id: string; name: string };
     min_bitfun_version: string;
-    runtime_dependencies: Array<{ id: string; version: string }>;
+    runtime_dependencies: Array<{
+      id: string;
+      label?: string;
+      version: string;
+      probe?: MiniAppRuntimeProbe;
+    }>;
     files: Record<string, string>;
   };
   app: MiniAppMeta;

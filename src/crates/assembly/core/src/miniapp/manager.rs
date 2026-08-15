@@ -14,7 +14,8 @@ use bitfun_product_domains::miniapp::customization::{
     MiniAppCustomizationBaseline, MiniAppCustomizationMetadata, MiniAppPermissionDiff,
 };
 use bitfun_product_domains::miniapp::distribution::{
-    version_satisfies_requirement, MiniAppDistributionIdentity, MiniAppPackageInspection,
+    decide_install, version_satisfies_requirement, MiniAppDistributionIdentity,
+    MiniAppInstallDecision, MiniAppPackageInspection,
 };
 use bitfun_product_domains::miniapp::draft::MiniAppDraft;
 use bitfun_product_domains::miniapp::lifecycle::{
@@ -693,15 +694,31 @@ impl MiniAppManager {
                 unavailable.join("; ")
             )));
         }
-        if self.list().await?.iter().any(|app| {
-            app.distribution
-                .as_ref()
-                .is_some_and(|identity| identity.package_id == extracted.manifest.package_id)
-        }) {
-            return Err(BitFunError::Validation(format!(
-                "MiniApp package '{}' is already installed",
-                extracted.manifest.package_id
-            )));
+        let installed_distributions: Vec<MiniAppDistributionIdentity> = self
+            .list()
+            .await?
+            .iter()
+            .filter_map(|app| app.distribution.clone())
+            .collect();
+        match decide_install(&installed_distributions, &extracted.manifest) {
+            MiniAppInstallDecision::Fresh => {}
+            MiniAppInstallDecision::NewVersion { installed_versions } => {
+                // A different version of the same package: install as a new
+                // instance alongside the existing ones (upgrade UX is a
+                // surface-level decision that must not delete user data).
+                log::info!(
+                    "installing MiniApp package '{}' version {} alongside installed versions: {}",
+                    extracted.manifest.package_id,
+                    extracted.manifest.version,
+                    installed_versions.join(", ")
+                );
+            }
+            MiniAppInstallDecision::DuplicateVersion => {
+                return Err(BitFunError::Validation(format!(
+                    "MiniApp package '{}' version {} is already installed",
+                    extracted.manifest.package_id, extracted.manifest.version
+                )));
+            }
         }
 
         let identity = MiniAppDistributionIdentity::from(&extracted.manifest);

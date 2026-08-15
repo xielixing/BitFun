@@ -10,7 +10,15 @@
   "runtime_dependencies": [
     {
       "id": "org.loopx.cli",
-      "version": ">=0.2.13"
+      "label": "LoopX CLI",
+      "version": ">=0.2.13",
+      "probe": {
+        "commands": [
+          ["loopx", "--version"],
+          ["python", "-m", "loopx.cli", "--version"],
+          ["py", "-3", "-m", "loopx.cli", "--version"]
+        ]
+      }
     }
   ]
 }
