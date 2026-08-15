@@ -78,6 +78,27 @@ iframe (ui.js 心跳状态机)
 
 ## 安装
 
+### 方式 A：分发包（推荐，无需源码）
+
+1. 在 BitFun 仓库根目录构建安装包：
+
+   ```bash
+   pnpm run miniapp:package:loopx
+   ```
+
+   输出 `dist/miniapps/org.loopx.console-3.0.0.bitfun-miniapp`
+   （ZIP 内含 `bitfun-miniapp.json` 清单 + SHA-256 文件清单，可复现构建）。
+
+2. 打开 BitFun → Mini Apps 画廊 → 点击工具栏的「安装 Mini App 包」按钮，
+   选择上面的 `.bitfun-miniapp` 文件。
+3. BitFun 会校验包完整性（清单 / 哈希 / 路径安全）并弹出确认单，展示
+   publisher、版本、权限和运行时依赖。运行时依赖为 **loopx CLI ≥ 0.2.13**
+   （探测 `loopx --version`）；不满足时确认按钮禁用并提示原因。
+4. 确认后安装并就地编译，随后自动打开应用。安装记录分发身份
+   （package_id / 版本 / publisher），同一包不能重复安装。
+
+### 方式 B：从源码导入（开发迭代）
+
 在 BitFun 中导入（**必须走导入，不能手动复制目录**——手动复制缺少编译产物，
 应用会出现在画廊里但无法打开）：
 
@@ -151,11 +172,20 @@ gate raises a system notification. The heartbeat pauses while the iframe is
 hidden, but post-turn decision polls pierce the pause — background batches
 and approval notifications keep flowing.
 
-**Install**: use the Mini Apps gallery's **Import from folder** on this directory
-(`MiniApp/Demo/loopx-console`). Do not copy the folder into the miniapps data
-directory by hand — the import step compiles the app; a hand-copied bundle
-lists in the gallery but cannot open. No npm deps. **Prereqs**: Python 3.11+
-with loopx importable (`pip install -e <checkout>`; loopx is not on PyPI yet;
-the worker falls back to `python -m loopx.cli` / `py -3 -m loopx.cli`, then to
-`PYTHONPATH=<source dir from Settings>`), Bun or Node for the worker, and a
-loopx registry (global or per-project `.loopx/registry.json`).
+**Install**: two paths. **Package (preferred)**: build the distributable bundle
+from the BitFun repo root with `pnpm run miniapp:package:loopx`
+(→ `dist/miniapps/org.loopx.console-3.0.0.bitfun-miniapp`, a reproducible ZIP
+with a `bitfun-miniapp.json` manifest and SHA-256 file list), then click the
+install-package action in the Mini Apps gallery, pick the file, and review the
+publisher/version/permissions/runtime-dependency report (loopx CLI >= 0.2.13,
+probed via `loopx --version`) before confirming; the app is compiled locally
+and opened after install, and the distribution identity prevents duplicate
+installs. **From source**: use the Mini Apps gallery's **Import from folder** on
+this directory (`MiniApp/Demo/loopx-console`). Do not copy the folder into the
+miniapps data directory by hand — the import step compiles the app; a
+hand-copied bundle lists in the gallery but cannot open. No npm deps.
+**Prereqs**: Python 3.11+ with loopx importable (`pip install -e <checkout>`;
+loopx is not on PyPI yet; the worker falls back to `python -m loopx.cli` /
+`py -3 -m loopx.cli`, then to `PYTHONPATH=<source dir from Settings>`), Bun or
+Node for the worker, and a loopx registry (global or per-project
+`.loopx/registry.json`).

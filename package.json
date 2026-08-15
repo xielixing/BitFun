@@ -13,6 +13,8 @@
     "generate-version": "node scripts/generate-version.cjs",
     "generate-startup-theme-bootstrap": "node scripts/generate-startup-theme-bootstrap.mjs",
     "generate-all": "pnpm run generate-version && pnpm run generate-startup-theme-bootstrap",
+    "miniapp:package": "node scripts/package-miniapp.mjs",
+    "miniapp:package:loopx": "node scripts/package-miniapp.mjs MiniApp/Demo/loopx-console",
     "postinstall": "pnpm run copy-assets",
     "dev": "node scripts/dev.cjs web",
     "dev:web": "pnpm --dir src/web-ui dev",
