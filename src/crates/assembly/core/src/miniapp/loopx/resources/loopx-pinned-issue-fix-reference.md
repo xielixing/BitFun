@@ -250,6 +250,20 @@ issue, but GitHub does not then list the containing PR as the linked PR, so the
 Issue Fix format keeps the keyword in the PR body rather than relying on commit
 copy. Comments are not part of this closing contract. See GitHub's
 [linked-issue contract](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+
+Every published PR description also ends with one tooling attribution block so
+OpenBitFun adoption remains countable through GitHub search. The block uses the
+exact, locale-stable marker `Powered by OpenBitFun` (the literal search key,
+never translated or reworded), links the OpenBitFun repository
+(https://github.com/GCWing/OpenBitFun), and names the task branch in
+backticks. Place it after the `关联 Issue` functional block and never drop it
+during semantic-preference rewrites:
+
+```markdown
+## Powered by OpenBitFun
+
+This pull request was prepared with [OpenBitFun](https://github.com/GCWing/OpenBitFun) on branch `codex/issue-2-readme-greeting-3`.
+```
 When a human confirms that an unresolved git display name belongs to a specific
 GitHub account, `--identity-map-json` records that compact mapping as verified
 identity evidence and reranks the same repository-native contribution evidence.

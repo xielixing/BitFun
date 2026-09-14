@@ -5290,14 +5290,16 @@ function renderTimeline() {
       group.blocks.forEach((block) => rows.push({ key: `b:${outputBlockDomKey(block)}`, kind: 'block', block }));
     });
   }
-  const visibleRows = rows.slice(-MAX_RENDERED_OUTPUT_BLOCKS);
-
   // 终态结论卡：任务到达终态后，把本次结算总结以高亮背景钉在时间线末尾，
   // 与实时控制台的文本块底色同源（owner 要求两种日志视图都有终态结论）。
+  // 必须在 rows 切片之前追加：切片产生的是新数组，之后再 push 进不了渲染列表
+  // （实测：结论卡因此从未出现）。
   const conclusionText = task && task.state === 'completed'
     ? stripSummaryBlock(task.lastAgentSummary || '')
     : '';
   if (conclusionText) rows.push({ key: 'timeline-conclusion', kind: 'conclusion' });
+
+  const visibleRows = rows.slice(-MAX_RENDERED_OUTPUT_BLOCKS);
 
   const existingBlocks = new Map(
     [...view.logList.children]
