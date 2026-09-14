@@ -100,6 +100,7 @@ const COPY = {
     followBannerHint: '正在展示运行中的任务；点击左侧任务可固定查看该 Issue',
     backToFollow: '恢复自动跟随',
     timelineTitle: '运行时间线',
+    timelineConclusion: '终态结论',
     timelineLiveScope: '实时 · {item}',
     timelineIdleScope: '已固定 · {item}',
     worktreeQuiet: '正在准备 Worktree：{item}。首次克隆可能需要几分钟；Git 静默时不会产生子进程输出。',
@@ -290,6 +291,9 @@ const COPY = {
     restore: '还原',
     updated: '更新于 {duration}前',
     taskUpdated: '任务更新于 {duration}前',
+    activityFinishedAgo: '完成于 {duration}前',
+    activityAwaitingRecovery: '待恢复 {duration}',
+    activityLastOutputAgo: '最后输出 {duration}前',
     openInGithub: '在 GitHub 中打开',
     openExternalFailed: '无法打开外部链接，请手动复制地址到浏览器。',
     currentWork: '当前',
@@ -461,6 +465,8 @@ const COPY = {
     state_queued: '排队中',
     state_queued_repo_wait: '等待同仓库任务',
     state_queued_after_approval: '已批准，等待执行',
+    state_monitoring_pr: '监控 PR #{number}',
+    state_monitoring_pr_unknown: '监控 PR 中',
     action_issue_fix_confirm_reproduction: '确认复现',
     action_issue_fix_feasibility_decision: '可行性判定',
     action_issue_fix_apply_patch: '实施修复',
@@ -575,6 +581,7 @@ const COPY = {
     followBannerHint: 'Showing the running task; select a task on the left to pin it',
     backToFollow: 'Resume auto-follow',
     timelineTitle: 'Run timeline',
+    timelineConclusion: 'Final outcome',
     timelineLiveScope: 'Live · {item}',
     timelineIdleScope: 'Pinned view',
     worktreeQuiet: 'Preparing worktree: {item}. The first clone can take a few minutes; Git may not emit output while it is working.',
@@ -765,6 +772,9 @@ const COPY = {
     restore: 'Restore',
     updated: 'Updated {duration} ago',
     taskUpdated: 'Task updated {duration} ago',
+    activityFinishedAgo: 'Finished {duration} ago',
+    activityAwaitingRecovery: 'Awaiting recovery for {duration}',
+    activityLastOutputAgo: 'Last output {duration} ago',
     openInGithub: 'Open in GitHub',
     openExternalFailed: 'Could not open the link. Copy the address into your browser instead.',
     currentWork: 'Current',
@@ -936,6 +946,8 @@ const COPY = {
     state_queued: 'Queued',
     state_queued_repo_wait: 'Waiting for same-repo task',
     state_queued_after_approval: 'Approved, waiting to run',
+    state_monitoring_pr: 'Monitoring PR #{number}',
+    state_monitoring_pr_unknown: 'Monitoring PR',
     action_issue_fix_confirm_reproduction: 'Confirm reproduction',
     action_issue_fix_feasibility_decision: 'Feasibility decision',
     action_issue_fix_apply_patch: 'Apply fix',
@@ -1373,6 +1385,14 @@ function queuedContextLabel(task) {
     });
   }
   if (isApprovedWaiting(task)) return text('state_queued_after_approval');
+  // PR 生命周期监视的 cadence 等待：这是有节奏的监控，不是排队。
+  if (isMonitorTodo(task)) {
+    const prUrl = taskPullRequestUrl(task);
+    const prNumber = (String(prUrl).match(/\/pull\/(\d+)/i) || [])[1];
+    return prNumber
+      ? text('state_monitoring_pr', { number: prNumber })
+      : text('state_monitoring_pr_unknown');
+  }
   return '';
 }
 function taskStateLabel(task) {
@@ -1463,6 +1483,39 @@ function compactItemLabel(item) {
 function shortId(value) {
   const raw = value == null ? '' : String(value);
   return raw.length > 14 ? raw.slice(0, 8) : raw;
+}
+
+/// 任务 meta 行小色点的稳定色相：同仓库同 issue 永远同色。色相限制在
+/// 170–319（青→蓝→紫），避开红/绿/黄这些会被误读为状态语义的颜色。
+/// 仅用于展示，不承载任何状态语义（运行/等待/失败仍由状态胶囊表达）。
+function taskAccentHue(task) {
+  const item = task && task.identity && task.identity.item;
+  const repo = (item && item.repository) || {};
+  const key = [
+    repo.host || '',
+    repo.owner || '',
+    repo.repository || '',
+    item ? item.kind || '' : '',
+    item ? item.number : (task && task.taskId) || '',
+  ].join('|');
+  let hash = 5381;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = ((hash * 33) ^ key.charCodeAt(index)) >>> 0;
+  }
+  return 170 + (hash % 150);
+}
+
+/// meta 行时间文案按状态消歧：同样的相对时长，在「已完成/待恢复/运行中」
+/// 下含义完全不同（完成多久/卡住多久/最后一条输出多久），用户截图反馈过歧义。
+function taskActivityText(task, activity) {
+  const duration = relativeLabel(activity);
+  if (!task) return duration;
+  if (task.state === 'completed') return text('activityFinishedAgo', { duration });
+  if (task.state === 'recovery_required') return text('activityAwaitingRecovery', { duration });
+  if (task.state === 'running' || task.state === 'waiting_for_user') {
+    return text('activityLastOutputAgo', { duration });
+  }
+  return duration;
 }
 
 function isPlanExhaustedMessage(message) {
@@ -2505,7 +2558,7 @@ function updateTaskButton(button, task) {
   const activity = task.lastOutputAt || task.updatedAt;
   const repositoryText = repositoryLabel(item && item.repository);
   const itemText = compactItemLabel(item);
-  const activityText = relativeLabel(activity);
+  const activityText = taskActivityText(task, activity);
   button.querySelector('.task-item__repo').textContent = repositoryText;
   button.querySelector('.task-item__item').textContent = itemText;
   button.querySelector('.task-item__time').textContent = activityText;
@@ -2544,6 +2597,7 @@ function updateTaskButton(button, task) {
   const visualState = taskVisualState(task);
   const externalWait = isExternalWait(task);
   button.dataset.state = visualState;
+  button.style.setProperty('--task-hue', String(taskAccentHue(task)));
   if (externalWait) button.dataset.wait = 'external';
   else delete button.dataset.wait;
   if (pendingAction) button.dataset.pending = pendingAction;
@@ -2559,7 +2613,12 @@ function updateTaskButton(button, task) {
 
   const stateText = taskStateDisplayLabel(task);
   taskState.textContent = stateText;
-  taskState.title = stateText;
+  let stateTitle = stateText;
+  if (task.state === 'queued' && isMonitorTodo(task)) {
+    const due = monitorNextCheckLabel(task);
+    if (due) stateTitle = `${stateText} · ${text('monitor_next_check')}: ${due}`;
+  }
+  taskState.title = stateTitle;
   const tone = task.state === 'completed' ? completionTone(task) : '';
   if (tone) taskState.dataset.tone = tone;
   else delete taskState.dataset.tone;
@@ -4642,6 +4701,46 @@ function outputBlockPreview(block) {
   return source.length > 160 ? `${source.slice(0, 159)}…` : source;
 }
 
+/// 终态结论卡：时间线末尾的高亮结算总结，随快照幂等更新。
+function timelineConclusionRow() {
+  const row = document.createElement('div');
+  row.className = 'timeline-conclusion-card';
+  row.dataset.blockKey = 'timeline-conclusion';
+  const head = document.createElement('div');
+  head.className = 'timeline-conclusion-card__head';
+  const label = document.createElement('span');
+  label.className = 'timeline-conclusion-card__label';
+  label.textContent = text('timelineConclusion');
+  head.append(label);
+  const body = document.createElement('div');
+  body.className = 'timeline-conclusion-card__body markdown-body';
+  row.append(head, body);
+  return row;
+}
+
+function updateTimelineConclusionCard(node, task) {
+  let time = node.querySelector('.timeline-conclusion-card__time');
+  if (task && task.lastAgentSummaryAt) {
+    if (!time) {
+      time = document.createElement('span');
+      time.className = 'timeline-conclusion-card__time';
+      node.querySelector('.timeline-conclusion-card__head').append(time);
+    }
+    time.textContent = clockLabel(task.lastAgentSummaryAt);
+    time.title = relativeLabel(task.lastAgentSummaryAt);
+  }
+  const tone = task ? completionTone(task) : '';
+  if (tone) node.dataset.tone = tone;
+  else delete node.dataset.tone;
+  const body = node.querySelector('.timeline-conclusion-card__body');
+  if (!body) return;
+  const source = task ? stripSummaryBlock(task.lastAgentSummary || '') : '';
+  if (source && body.dataset.renderedText !== source) {
+    body.dataset.renderedText = source;
+    renderMarkdown(body, source, itemUrl(task.identity && task.identity.item));
+  }
+}
+
 function outputBlockIssueNode(block, className) {
   const task = taskForId(block.taskId);
   const item = task && task.identity && task.identity.item;
@@ -5193,6 +5292,13 @@ function renderTimeline() {
   }
   const visibleRows = rows.slice(-MAX_RENDERED_OUTPUT_BLOCKS);
 
+  // 终态结论卡：任务到达终态后，把本次结算总结以高亮背景钉在时间线末尾，
+  // 与实时控制台的文本块底色同源（owner 要求两种日志视图都有终态结论）。
+  const conclusionText = task && task.state === 'completed'
+    ? stripSummaryBlock(task.lastAgentSummary || '')
+    : '';
+  if (conclusionText) rows.push({ key: 'timeline-conclusion', kind: 'conclusion' });
+
   const existingBlocks = new Map(
     [...view.logList.children]
       .filter((node) => node.dataset && node.dataset.blockKey)
@@ -5213,6 +5319,11 @@ function renderTimeline() {
       const node = existingBlocks.get(row.key);
       if (!node) return turnOutputBlockRow(row.block);
       updateTurnOutputBlockRow(node, row.block);
+      return node;
+    }
+    if (row.kind === 'conclusion') {
+      const node = existingBlocks.get(row.key) || timelineConclusionRow();
+      updateTimelineConclusionCard(node, task);
       return node;
     }
     if (row.kind === 'toolRun') {

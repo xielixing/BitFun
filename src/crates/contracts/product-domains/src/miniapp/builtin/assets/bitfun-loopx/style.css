@@ -526,16 +526,20 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 #task-items { min-height: 0; }
 .task-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 70px;
+  /* 状态胶囊独立成行：任务栏纵向空间充裕，横向压缩会让胶囊右侧留大片空底色（用户截图反馈）。 */
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   width: 100%;
   min-height: 46px;
   margin: 0 0 3px;
   padding: 6px 7px;
-  border: 1px solid transparent;
+  border: 1px solid var(--lx-border);
   border-radius: var(--lx-radius);
-  background: transparent;
+  /* 卡片与底色用明度分层区分（参考 Linear 的白卡+灰底），不用彩色底避免被误读为状态；
+     issue 身份只保留 meta 行的小色点，色相限制在青蓝紫区间避开红绿黄的状态联想。 */
+  --task-hue: 200;
+  background: var(--lx-elevated);
   color: var(--lx-text-soft);
   text-align: left;
   transition: background 120ms ease, border-color 120ms ease;
@@ -558,7 +562,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
    is carried by the tinted background, the left accent bar and the sweep. */
 .task-item[data-state="running"] {
   border-color: transparent;
-  background: color-mix(in srgb, var(--lx-accent) 7%, var(--lx-element));
+  background: color-mix(in srgb, var(--lx-accent) 7%, var(--lx-elevated));
   box-shadow: none;
 }
 /* A task that is both running and selected keeps the selection ring, so the
@@ -592,24 +596,56 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .task-item__repo { overflow: hidden; min-width: 0; text-overflow: ellipsis; }
 .task-item__item, .task-item__time { flex: 0 0 auto; }
+.task-item__item::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: hsl(var(--task-hue) 62% 52%);
+  vertical-align: middle;
+}
 .task-item__main .task-item__reason { color: var(--lx-text-soft); }
-.task-item__state { align-self: start; min-width: 0; width: 100%; margin-top: 2px; }
+.task-item__state { justify-self: start; min-width: 0; max-width: 100%; margin-top: 3px; }
 .task-item__hint {
-  width: 100%;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--lx-text-muted);
   font-size: 9px;
   font-weight: 600;
-  line-height: 1.25;
-  text-align: right;
+  line-height: 1.35;
+  text-align: left;
   /* 状态胶囊不换行：窄轨里「等待同仓库任务」曾被拆成两行（用户截图反馈）。 */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--lx-text-muted) 10%, transparent);
 }
-.task-item__hint[data-status="waiting_for_user"] { color: var(--lx-warning); }
-.task-item__hint[data-status="recovery_required"] { color: var(--lx-warning); }
-.task-item__hint[data-status="failed"] { color: var(--lx-error); }
-.task-item__hint[data-status="completed"] { color: var(--lx-success); }
+.task-item__hint[data-status="queued"],
+.task-item__hint[data-status="preparing"],
+.task-item__hint[data-status="retry_wait"] {
+  color: var(--lx-info);
+  border-color: color-mix(in srgb, var(--lx-info) 32%, transparent);
+  background: color-mix(in srgb, var(--lx-info) 12%, transparent);
+}
+.task-item__hint[data-status="waiting_for_user"], .task-item__hint[data-status="recovery_required"] {
+  color: var(--lx-warning);
+  border-color: color-mix(in srgb, var(--lx-warning) 34%, transparent);
+  background: color-mix(in srgb, var(--lx-warning) 13%, transparent);
+}
+.task-item__hint[data-status="failed"] {
+  color: var(--lx-error);
+  border-color: color-mix(in srgb, var(--lx-error) 36%, transparent);
+  background: color-mix(in srgb, var(--lx-error) 12%, transparent);
+}
+.task-item__hint[data-status="completed"] {
+  color: var(--lx-success);
+  border-color: color-mix(in srgb, var(--lx-success) 32%, transparent);
+  background: color-mix(in srgb, var(--lx-success) 12%, transparent);
+}
 .task-item__hint[data-status="queued"], .task-item__hint[data-status="preparing"] { color: var(--lx-accent); }
 .task-item__hint[data-wait="external"] { color: var(--lx-text-muted); }
 .task-item__hint::before {
@@ -622,13 +658,15 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: currentColor;
   vertical-align: middle;
 }
-.task-item__hint--running::before { display: none; }
 .task-item__hint--running {
-  max-width: none;
-  padding: 2px 6px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--lx-accent) 12%, transparent);
   color: var(--lx-accent);
+  border-color: color-mix(in srgb, var(--lx-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--lx-accent) 13%, transparent);
+}
+.task-item__hint--running::before { animation: task-state-dot-pulse 1.1s ease-in-out infinite; }
+@keyframes task-state-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 .task-empty { display: grid; place-items: center; gap: 4px; margin: auto; color: var(--lx-text-muted); text-align: center; }
 .task-empty span { font: 22px/1 var(--lx-mono); }
@@ -644,6 +682,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   width: 9px;
   height: 9px;
   margin: auto;
+  padding: 0;
+  border: none;
   overflow: hidden;
   border-radius: 50%;
   background: var(--lx-text-muted);
@@ -1156,12 +1196,51 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: transparent;
 }
 .turn-output-row:hover { background: var(--lx-hover); }
+/* 结算总结所在的模型文本块给一层淡底色：与思考/工具遥测区分，让每段收尾总结一眼可辨。 */
+.turn-output-row[data-kind="text"] {
+  border-left-color: var(--lx-accent);
+  background: color-mix(in srgb, var(--lx-accent) 4%, transparent);
+}
+.turn-output-row[data-kind="text"]:hover {
+  background: color-mix(in srgb, var(--lx-accent) 8%, transparent);
+}
 .turn-output-row[data-kind="thinking"] { border-left-color: var(--lx-text-muted); }
 .turn-output-row[data-kind="tool"] { border-left-color: var(--lx-accent); }
 .turn-output-row[data-kind="model_round_started"], .turn-output-row[data-kind="model_round_completed"] {
   border-left-color: var(--lx-success);
 }
 .turn-output-row[data-level="error"] { border-left-color: var(--lx-error); }
+/* 终态结论卡：结算总结钉在时间线末尾，背景高亮（与控制台文本块底色同源）。 */
+.timeline-conclusion-card {
+  margin: 10px 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--lx-accent) 26%, transparent);
+  border-left: 3px solid var(--lx-accent);
+  border-radius: var(--lx-radius);
+  background: color-mix(in srgb, var(--lx-accent) 7%, transparent);
+}
+.timeline-conclusion-card__head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.timeline-conclusion-card__label { color: var(--lx-accent); font: 700 11px/1.2 var(--lx-font); }
+.timeline-conclusion-card__time { margin-left: auto; color: var(--lx-text-muted); font: 9px/1.2 var(--lx-mono); }
+.timeline-conclusion-card__body { color: var(--lx-text); font-size: 11px; }
+.timeline-conclusion-card[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--lx-success) 30%, transparent);
+  border-left-color: var(--lx-success);
+  background: color-mix(in srgb, var(--lx-success) 8%, transparent);
+}
+.timeline-conclusion-card[data-tone="success"] .timeline-conclusion-card__label { color: var(--lx-success); }
+.timeline-conclusion-card[data-tone="info"] {
+  border-color: color-mix(in srgb, var(--lx-info) 30%, transparent);
+  border-left-color: var(--lx-info);
+  background: color-mix(in srgb, var(--lx-info) 8%, transparent);
+}
+.timeline-conclusion-card[data-tone="info"] .timeline-conclusion-card__label { color: var(--lx-info); }
+.timeline-conclusion-card[data-tone="muted"] {
+  border-color: color-mix(in srgb, var(--lx-border) 60%, transparent);
+  border-left-color: var(--lx-text-muted);
+  background: color-mix(in srgb, var(--lx-text-muted) 7%, transparent);
+}
+.timeline-conclusion-card[data-tone="muted"] .timeline-conclusion-card__label { color: var(--lx-text-soft); }
 .output-block__header {
   display: flex;
   align-items: center;
