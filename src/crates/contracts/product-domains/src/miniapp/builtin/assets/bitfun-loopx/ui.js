@@ -2545,7 +2545,11 @@ function taskButton(task) {
 }
 
 function updateTaskButton(button, task) {
-  const selected = task.taskId === state.selectedTaskId;
+  // 任务栏始终高亮「详情/日志面板当前显示的那个任务」：显式选中优先，
+  // 否则是跟随目标（运行中/首个可执行），保证任意时刻都有一个聚焦卡片
+  // 与面板内容对应（owner 反馈：跟随模式下面板有内容但任务栏无聚焦标记）。
+  const displayed = displayedTask();
+  const selected = Boolean(displayed) && task.taskId === displayed.taskId;
   button.classList.toggle('is-selected', selected);
   button.setAttribute('aria-pressed', String(selected));
 
